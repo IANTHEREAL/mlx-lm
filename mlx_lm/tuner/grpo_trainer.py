@@ -21,6 +21,10 @@ from .grpo_reward_functions import (
     r1_soft_format_reward_func,
     r1_strict_format_reward_func,
 )
+from .graph_reward_functions import (
+    expert_reward_func,
+    strict_format_reward_func,
+)
 from .trainer import TrainingArgs, TrainingCallback, average_gradients, grad_checkpoint
 
 
@@ -423,10 +427,12 @@ def grpo_loss(
         if last_prompt_idx < len(answer_text):
             print(f"\n✅ Answer:\n{answer_text[last_prompt_idx]}")
             print("\n" + "=" * 10 + "\n")
+        """
         if "r1_extract_xml_answer" in globals():
             print(
                 f"\n🔍 Extracted Answer:\n{r1_extract_xml_answer(all_completion_texts[-1])}"
             )
+        """
         print("\n" + "=" * 35 + "\n")
 
     mx.clear_cache()
@@ -503,11 +509,8 @@ def evaluate_grpo(
     max_tokens: int,
     temperature: float,
     reward_funcs: Optional[List[RewardFunctions]] = [
-        r1_accuracy_reward_func,
-        r1_int_reward_func,
-        r1_strict_format_reward_func,
-        r1_soft_format_reward_func,
-        r1_count_xml,
+        expert_reward_func,
+        strict_format_reward_func,
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
@@ -569,11 +572,8 @@ def train_grpo(
     train_dataset,
     val_dataset,
     reward_funcs: Optional[List[RewardFunctions]] = [
-        r1_accuracy_reward_func,
-        r1_int_reward_func,
-        r1_strict_format_reward_func,
-        r1_soft_format_reward_func,
-        r1_count_xml,
+        strict_format_reward_func,
+        expert_reward_func,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
