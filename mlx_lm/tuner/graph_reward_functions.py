@@ -113,6 +113,10 @@ def extract_issues(response: str):
     }
 
 
+def reward_len(completions, **kwargs):
+    ideal_length = 2048
+    return [-abs(ideal_length - len(completion)) for completion in completions]
+
 def strict_format_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
 ) -> list[float]:
@@ -196,13 +200,14 @@ def expert_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
 ) -> list[float]:
     responses = [completion for completion in completions]
-
     scores = []
+
     for i, response in enumerate(responses):
         try:
             student_issues = extract_issues(response)
             reference_issues = extract_issues(answer[i])
         except Exception as e:
+            print(f"Failed to parse expert_reward_func response {e}")
             scores.append(0)
             continue
 
@@ -261,7 +266,9 @@ def expert_reward_func(
                         2,
                     )
                 else:
-                    pass
+                    reference_entity_redundancy_issue_count = len(
+                        reference_entity_redundancy_issues
+                    )
         except Exception as e:
             print(
                 f"Failed to count entity redundancy issues in expert_reward_func response {e}"
@@ -321,7 +328,9 @@ def expert_reward_func(
                         2,
                     )
                 else:
-                    pass
+                    reference_relationship_redundancy_issue_count = len(
+                        reference_relationship_redundancy_issues
+                    )
         except Exception as e:
             print(
                 f"Failed to count relationship redundancy issues in expert_reward_func response {e}"
@@ -355,6 +364,10 @@ def expert_reward_func(
                     reference_entity_quality_issues_ids,
                 )
                 this_score[2] = round(f1_score, 2)
+            else:
+                reference_entity_quality_issue_count = len(
+                    reference_entity_quality_issues_ids
+                )
         except Exception as e:
             print(
                 f"Failed to count entity quality issues in expert_reward_func response {e}"
@@ -390,6 +403,10 @@ def expert_reward_func(
                     reference_relationship_quality_issues_ids,
                 )
                 this_score[3] = round(f1_score, 2)
+            else:
+                reference_relationship_quality_issue_count = len(
+                    reference_relationship_quality_issues_ids
+                )
         except Exception as e:
             print(
                 f"Failed to count relationship quality issues in expert_reward_func response {e}"
@@ -401,6 +418,12 @@ def expert_reward_func(
             + reference_entity_quality_issue_count
             + reference_relationship_quality_issue_count
         )
+        if total_issue_count == 0:
+            print(
+                f"expert_reward_func - no issues found, F1 score: 0, student answer: {student_issues}, reference answer: {reference_issues}"
+            )
+            scores.append(0)
+            continue
         weightd_score = (
             (reference_entity_redundancy_issue_count / total_issue_count)
             * this_score[0]

@@ -24,6 +24,7 @@ from .grpo_reward_functions import (
 from .graph_reward_functions import (
     expert_reward_func,
     strict_format_reward_func,
+    reward_len,
 )
 from .trainer import TrainingArgs, TrainingCallback, average_gradients, grad_checkpoint
 
@@ -511,6 +512,7 @@ def evaluate_grpo(
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
         strict_format_reward_func,
+        reward_len,
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
@@ -574,6 +576,7 @@ def train_grpo(
     reward_funcs: Optional[List[RewardFunctions]] = [
         strict_format_reward_func,
         expert_reward_func,
+	reward_len,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
