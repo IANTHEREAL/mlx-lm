@@ -576,7 +576,7 @@ def train_grpo(
     reward_funcs: Optional[List[RewardFunctions]] = [
         strict_format_reward_func,
         expert_reward_func,
-	reward_len,
+	    reward_len,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
