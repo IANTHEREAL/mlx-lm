@@ -139,3 +139,5 @@ dmypy.json
 .DS_Store
 
 material/
+grpo_distributed_training_analysis.md
+config.yaml
