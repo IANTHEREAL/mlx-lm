@@ -114,7 +114,7 @@ def extract_issues(response: str):
 
 
 def reward_len(completions, answer: list, **kwargs):
-    responses = [completion[0]["content"] for completion in completions]
+    responses = [completion for completion in completions]
     scores = []
     for index, response in enumerate(responses):
         completion_issues = re.findall(
