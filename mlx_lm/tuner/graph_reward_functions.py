@@ -115,7 +115,7 @@ def extract_issues(response: str):
 
 def reward_len(completions, **kwargs):
     ideal_length = 2048
-    return [-abs(ideal_length - len(completion)) for completion in completions]
+    return [1-abs(1 - len(completion)/ideal_length) for completion in completions]
 
 def strict_format_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
