@@ -457,8 +457,7 @@ def main():
             config = yaml.load(file, yaml_loader)
         # Prefer parameters from command-line arguments
         for k, v in config.items():
-            if args.get(k, None) is None:
-                args[k] = v
+            args[k] = v
 
     # Update defaults for unspecified parameters
     for k, v in CONFIG_DEFAULTS.items():
