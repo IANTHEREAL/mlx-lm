@@ -113,9 +113,18 @@ def extract_issues(response: str):
     }
 
 
-def reward_len(completions, **kwargs):
-    ideal_length = 2048
-    return [1-abs(1 - len(completion)/ideal_length) for completion in completions]
+def reward_len(completions, answer: list, **kwargs):
+    responses = [completion[0]["content"] for completion in completions]
+    scores = []
+    for index, response in enumerate(responses):
+        completion_issues = re.findall(
+            r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', response, re.DOTALL
+        )
+        reference_issues = re.findall(
+            r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', answer[index], re.DOTALL
+        )
+        scores.append(1-abs(1 - len(completion_issues)/len(reference_issues)))
+    return scores
 
 def strict_format_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
