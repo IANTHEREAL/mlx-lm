@@ -28,7 +28,7 @@ args = {
     "save_every": 10,
     "test": False,
     "test_batches": 10,
-    "max_seq_length": 10000,
+    "max_seq_length": 6500,
     "config": None,
     "grad_checkpoint": True,
     "lr_schedule": None,
