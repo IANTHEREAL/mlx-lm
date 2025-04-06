@@ -342,8 +342,6 @@ def train_model(
             # reference_model, _ = load(args.model)
             reference_model = None
 
-
-
         train_grpo(
             model=model,
             ref_model=reference_model.freeze() if reference_model else None,

@@ -116,9 +116,9 @@ def extract_issues(response: str):
 def reward_len(completions, answer: list, **kwargs):
     responses = [completion for completion in completions]
     scores = []
-    print(f"reference answer:\n {answer[0]}")
+    # print(f"reference answer:\n {answer[0]}")
     for index, response in enumerate(responses):
-        print(f"answer_{index}, {response}")
+        # print(f"answer_{index}, {response}")
         completion_issues = re.findall(
             r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', response, re.DOTALL
         )

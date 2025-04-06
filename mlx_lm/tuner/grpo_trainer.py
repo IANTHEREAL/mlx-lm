@@ -251,6 +251,7 @@ def grpo_loss(
     mx.eval(token_log_probs)
 
     if ref_model is None:
+        print("disbale reference model")
         ref_token_log_probs = token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
