@@ -88,7 +88,7 @@ def generate_grpo(
     group_size: int,
     temperature: float,
     batch_size: int,
-    end_token: str = "</answer>"
+    end_token: str = "</answer>",
 ):
     try:
         end_sequence = mx.array(tokenizer.encode(end_token))
@@ -190,6 +190,7 @@ def grpo_loss(
             batch_size=batch_size,
         )
 
+    print("group size:", len(all_completions))
     if not all_completions:
         raise ValueError(
             "No completions were generated. Please check your model and inputs."
@@ -216,7 +217,9 @@ def grpo_loss(
             ordered_batch_indices.append(prompt_idx)
             expanded_answers.append(answer_text[prompt_idx])
             expanded_prompts.append(prompt_text[prompt_idx])
-            expanded_types.append(type_info[prompt_idx] if type_info is not None else None)
+            expanded_types.append(
+                type_info[prompt_idx] if type_info is not None else None
+            )
 
     all_completions = ordered_completions
     all_completion_texts = ordered_completion_texts
@@ -273,12 +276,14 @@ def grpo_loss(
             prompts=expanded_prompts,
             completions=all_completion_texts,
             answer=expanded_answers,
-            types=expanded_types
+            types=expanded_types,
         )
         if raw_rewards is None:
-            processed_rewards = [float('nan')] * len(all_completion_texts)
+            processed_rewards = [float("nan")] * len(all_completion_texts)
         else:
-            processed_rewards = [float(r) if r is not None else float('nan') for r in raw_rewards]
+            processed_rewards = [
+                float(r) if r is not None else float("nan") for r in raw_rewards
+            ]
         func_rewards = mx.array(processed_rewards)
         all_func_rewards.append(func_rewards)
 
@@ -367,9 +372,7 @@ def grpo_loss(
     per_token_loss = per_token_loss * length_mask
 
     # Average over tokens
-    loss = (
-        per_token_loss * length_mask
-    ).sum() / length_mask.sum()
+    loss = (per_token_loss * length_mask).sum() / length_mask.sum()
 
     # Calculate mean KL divergence for metrics
     mean_kl = ((kl_div * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
@@ -382,15 +385,32 @@ def grpo_loss(
             completions=all_completion_texts,
             answer=expanded_answers,
         )
-        valid_mask = ~mx.isnan(mx.array([reward if reward is not None else float('nan') for reward in raw_rewards]))
-        valid_rewards = mx.array([reward for reward in raw_rewards if reward is not None and not mx.isnan(reward)])
+        valid_mask = ~mx.isnan(
+            mx.array(
+                [
+                    reward if reward is not None else float("nan")
+                    for reward in raw_rewards
+                ]
+            )
+        )
+        valid_rewards = mx.array(
+            [
+                reward
+                for reward in raw_rewards
+                if reward is not None and not mx.isnan(reward)
+            ]
+        )
         if len(valid_rewards) > 0:
             reward_metrics[f"{func_name}_mean"] = mx.mean(valid_rewards)
-            reward_metrics[f"{func_name}_std"] = mx.std(valid_rewards) if len(valid_rewards) > 1 else mx.zeros(1)
-            reward_metrics[f"{func_name}_coverage"] = valid_mask.sum() / len(raw_rewards)
+            reward_metrics[f"{func_name}_std"] = (
+                mx.std(valid_rewards) if len(valid_rewards) > 1 else mx.zeros(1)
+            )
+            reward_metrics[f"{func_name}_coverage"] = valid_mask.sum() / len(
+                raw_rewards
+            )
         else:
-            reward_metrics[f"{func_name}_mean"] = float('nan')
-            reward_metrics[f"{func_name}_std"] = float('nan')
+            reward_metrics[f"{func_name}_mean"] = float("nan")
+            reward_metrics[f"{func_name}_std"] = float("nan")
             reward_metrics[f"{func_name}_coverage"] = 0.0
 
     grouped_rewards_mean = mx.array(
@@ -444,7 +464,11 @@ def grpo_loss(
 def iterate_grpo_batches(dataset, batch_size, max_seq_length, train=False):
     has_types = isinstance(dataset[0], tuple) and len(dataset[0]) == 5
 
-    if not dataset or not isinstance(dataset[0], tuple) or (not has_types and len(dataset[0]) != 4):
+    if (
+        not dataset
+        or not isinstance(dataset[0], tuple)
+        or (not has_types and len(dataset[0]) != 4)
+    ):
         raise ValueError(
             "Dataset must be list of (prompt_tokens, answer_tokens, prompt_str, answer_str[, type]) tuples"
         )
@@ -576,7 +600,7 @@ def train_grpo(
     reward_funcs: Optional[List[RewardFunctions]] = [
         strict_format_reward_func,
         expert_reward_func,
-	    reward_len,
+        reward_len,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
@@ -641,7 +665,7 @@ def train_grpo(
         "grouped_rewards_mean": 0,
         "grouped_rewards_std": 0,
         "kl": 0,
-        'average_generated_tokens': 0
+        "average_generated_tokens": 0,
     }
     for reward_func in reward_funcs:
         func_name = reward_func.__name__
