@@ -59,7 +59,6 @@ def extract_issues(response: str):
         issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
         affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
         reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
-        conclusion_match = re.search(r"conclusion:\s*([\s\S]*?)\n", issue)
         confidence_match = re.search(r"confidence:\s*([\w_/]+)\n", issue)
         facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", issue)
 
@@ -67,7 +66,6 @@ def extract_issues(response: str):
             not issue_type_match
             or not affected_ids_match
             or not reasoning_match
-            or not conclusion_match
             or not confidence_match
         ):
             continue
@@ -80,7 +78,6 @@ def extract_issues(response: str):
             continue
 
         reasoning = reasoning_match.group(1).strip()
-        conclusion = conclusion_match.group(1).strip()
         confidence = confidence_match.group(1).strip()
         if facto_search_match:
             facto_search = facto_search_match.group(1).strip()
@@ -91,7 +88,6 @@ def extract_issues(response: str):
             "issue_type": issue_type,
             "affected_ids": affected_ids,
             "reasoning": reasoning,
-            "conclusion": conclusion,
             "confidence": confidence,
             "facto_search": facto_search,
         }
