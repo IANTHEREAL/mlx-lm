@@ -189,6 +189,7 @@ def load_adapters(model: nn.Module, adapter_path: str) -> nn.Module:
             config.lora_parameters,
             use_dora=(fine_tune_type == "dora"),
         )
+    print(f"load load adapters from {adapter_path}")
     model.load_weights(str(adapter_path / "adapters.safetensors"), strict=False)
     return model
 

@@ -1,0 +1,41 @@
+model: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+train: false
+fine_tune_type: lora
+training_mode: grpo
+optimizer: adam
+optimizer_config:
+  adam: {}
+  adamw: {}
+data: material/graph_optimization_dataset
+seed: 3407
+num_layers: 16
+batch_size: 1
+iters: 100
+val_batches: 1
+learning_rate: 1.0e-5
+steps_per_report: 1
+steps_per_eval: 10
+resume_adapter_file: null
+adapter_path: material/graph-grpo-0406
+# adapter_path: ""
+save_every: 10
+test: true
+test_batches: 11
+max_seq_length: 5400
+grad_checkpoint: true
+lr_schedule: null
+lora_parameters:
+  rank: 16
+  alpha: 16
+  dropout: 0.0
+  scale: 10.0
+mask_prompt: false
+reference_model_path: null
+group_size: 3
+beta: 0.1
+epsilon: 1.0e-4
+max_completion_length: 3500
+use_chat_template: true
+use_prompt: false
+temperature: 0.6
+reward_weights: null
