@@ -44,8 +44,8 @@ def normalize_affected_ids(redundancy_sets):
 
 
 def extract_issues(response: str):
-    analysis_tags = re.findall(
-        r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', response, re.DOTALL
+    issue_tags = re.findall(
+        r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
     )
 
     entity_redundancy_issues = []
@@ -54,14 +54,14 @@ def extract_issues(response: str):
     relationship_quality_issues = []
 
     # Process each analysis tag
-    for analysis in analysis_tags:
+    for issue in issue_tags:
         # Extract issue_type and affected_ids
-        issue_type_match = re.search(r"issue_type:\s*([^\n]*)", analysis)
-        affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", analysis)
-        reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", analysis)
-        conclusion_match = re.search(r"conclusion:\s*([\s\S]*?)\n", analysis)
-        confidence_match = re.search(r"confidence:\s*([\w_/]+)\n", analysis)
-        facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", analysis)
+        issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
+        affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
+        reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
+        conclusion_match = re.search(r"conclusion:\s*([\s\S]*?)\n", issue)
+        confidence_match = re.search(r"confidence:\s*([\w_/]+)\n", issue)
+        facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", issue)
 
         if (
             not issue_type_match
@@ -120,10 +120,10 @@ def reward_len(completions, answer: list, **kwargs):
     for index, response in enumerate(responses):
         # print(f"answer_{index}, {response}")
         completion_issues = re.findall(
-            r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', response, re.DOTALL
+            r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
         )
         reference_issues = re.findall(
-            r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', answer[index], re.DOTALL
+            r'<issue\s*[">]?\s*(.*?)\s*</issue>', answer[index], re.DOTALL
         )
         scores.append(1-abs(1 - len(completion_issues)/len(reference_issues)))
     return scores
@@ -149,22 +149,22 @@ def strict_format_reward_func(
                 scores.append(this_score)
                 continue
 
-            analysis_start_count = response.count("<analysis>")
-            analysis_end_count = response.count("</analysis>")
-            if analysis_start_count != analysis_end_count:
-                this_score -= abs(analysis_start_count - analysis_end_count) * 0.1
+            issue_start_count = response.count("<issue>")
+            issue_end_count = response.count("</issue>")
+            if issue_start_count != issue_end_count:
+                this_score -= abs(issue_start_count - issue_end_count) * 0.1
 
-            analysis_tags = re.findall(
-                r'<analysis\s*[">]?\s*(.*?)\s*</analysis>', response, re.DOTALL
+            issue_tags = re.findall(
+                r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
             )
 
             reference_score = 0
 
             # Process each analysis tag
-            for analysis in analysis_tags:
+            for issue in issue_tags:
                 # Extract issue_type and affected_ids
-                issue_type_match = re.search(r"issue_type:\s*([^\n]*)", analysis)
-                affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", analysis)
+                issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
+                affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
 
                 if not issue_type_match or not affected_ids_match:
                     continue
@@ -194,8 +194,8 @@ def strict_format_reward_func(
                 elif issue_type == "N/A":
                     reference_score += 0.4
 
-            if len(analysis_tags) > 0:
-                avg_action_score = reference_score / len(analysis_tags)
+            if len(issue_tags) > 0:
+                avg_action_score = reference_score / len(issue_tags)
             else:
                 avg_action_score = 0
 

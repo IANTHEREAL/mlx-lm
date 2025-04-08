@@ -21,7 +21,7 @@ adapter_path: material/graph-grpo-0406
 save_every: 10
 test: true
 test_batches: 11
-max_seq_length: 5400
+max_seq_length: 3000
 grad_checkpoint: true
 lr_schedule: null
 lora_parameters:
@@ -31,10 +31,10 @@ lora_parameters:
   scale: 10.0
 mask_prompt: false
 reference_model_path: null
-group_size: 3
+group_size: 5
 beta: 0.1
 epsilon: 1.0e-4
-max_completion_length: 3500
+max_completion_length: 1500
 use_chat_template: true
 use_prompt: false
 temperature: 0.6
