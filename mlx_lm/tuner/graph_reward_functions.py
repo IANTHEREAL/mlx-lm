@@ -121,7 +121,11 @@ def reward_len(completions, answer: list, **kwargs):
         reference_issues = re.findall(
             r'<issue\s*[">]?\s*(.*?)\s*</issue>', answer[index], re.DOTALL
         )
-        scores.append(1-abs(1 - len(completion_issues)/len(reference_issues)))
+
+        if len(reference_issues) == 0:
+            scores.append(len(completion_issues) == 0)
+        else:
+            scores.append(1-abs(1 - len(completion_issues)/len(reference_issues)))
     return scores
 
 def strict_format_reward_func(
