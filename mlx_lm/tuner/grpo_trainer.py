@@ -448,6 +448,8 @@ def grpo_loss(
             print(f"\n📝 Generation {index+1}:\n{completion_text}")
             print("\n" + "=" * 10 + "\n")
 
+        print(f"\n💭 Metrics {metrics}")
+
         if last_prompt_idx < len(answer_text):
             print(f"\n✅ Answer:\n{answer_text[last_prompt_idx]}")
             print("\n" + "=" * 10 + "\n")
