@@ -20,7 +20,7 @@ adapter_path: material/graph-grpo-0406
 # adapter_path: ""
 save_every: 10
 test: true
-test_batches: 11
+test_batches: 10
 max_seq_length: 3000
 grad_checkpoint: true
 lr_schedule: null
