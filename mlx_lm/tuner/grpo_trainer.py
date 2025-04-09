@@ -251,7 +251,6 @@ def grpo_loss(
     mx.eval(token_log_probs)
 
     if ref_model is None:
-        print("disbale reference model")
         ref_token_log_probs = token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
@@ -444,8 +443,11 @@ def grpo_loss(
                 actual_prompt = tokenizer.decode(prompt_tokens[last_prompt_idx])
                 print(f"\n🔄 Model Input:\n{actual_prompt}")
                 print("\n" + "=" * 10 + "\n")
-        print(f"\n📝 Generation:\n{all_completion_texts[-1]}")
-        print("\n" + "=" * 10 + "\n")
+
+        for index, completion_text in enumerate(all_completion_texts):
+            print(f"\n📝 Generation {index+1}:\n{completion_text}")
+            print("\n" + "=" * 10 + "\n")
+
         if last_prompt_idx < len(answer_text):
             print(f"\n✅ Answer:\n{answer_text[last_prompt_idx]}")
             print("\n" + "=" * 10 + "\n")
