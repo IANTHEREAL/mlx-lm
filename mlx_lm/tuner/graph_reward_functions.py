@@ -1,4 +1,5 @@
 import re
+import math
 from typing import Callable, List, Optional
 
 
@@ -44,9 +45,7 @@ def normalize_affected_ids(redundancy_sets):
 
 
 def extract_issues(response: str):
-    issue_tags = re.findall(
-        r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
-    )
+    issue_tags = re.findall(r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL)
 
     entity_redundancy_issues = []
     relationship_redundancy_issues = []
@@ -122,11 +121,21 @@ def reward_len(completions, answer: list, **kwargs):
             r'<issue\s*[">]?\s*(.*?)\s*</issue>', answer[index], re.DOTALL
         )
 
-        if len(reference_issues) == 0:
-            scores.append(len(completion_issues) == 0)
+        num_completion_issues = len(completion_issues)
+        num_reference_issues = len(reference_issues)
+
+        if num_reference_issues == 0:
+            score = 1.0 if num_completion_issues == 0 else 0.0
         else:
-            scores.append(1-abs(1 - len(completion_issues)/len(reference_issues)))
+            diff_ratio = (
+                abs(num_completion_issues - num_reference_issues) / num_reference_issues
+            )
+            score = math.exp(-(diff_ratio**2) / 2)
+
+        scores.append(score)
+
     return scores
+
 
 def strict_format_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
@@ -191,8 +200,6 @@ def strict_format_reward_func(
                     issue_type == "relationship_quality_issue" and len(affected_ids) > 0
                 ):
                     reference_score += 0.4
-                elif issue_type == "N/A":
-                    reference_score += 0.4
 
             if len(issue_tags) > 0:
                 avg_action_score = reference_score / len(issue_tags)
@@ -249,14 +256,14 @@ def expert_reward_func(
                 and len(reference_entity_redundancy_issues) == 0
             ):
                 entity_redundancy_issue_count = 1
-                this_score[0] = 1
+                this_score[0] = 0.4
             elif (
                 len(student_entity_redundancy_issues) > 0
                 and len(reference_entity_redundancy_issues) > 0
             ):
                 entity_redundancy_issue_count = max(
                     len(reference_entity_redundancy_issues),
-                    len(student_entity_redundancy_issues)
+                    len(student_entity_redundancy_issues),
                 )
                 redundancy_entity_f1_scores = []
                 for student_ids_set in student_entity_redundancy_issues:
@@ -280,7 +287,7 @@ def expert_reward_func(
                 else:
                     entity_redundancy_issue_count = max(
                         len(reference_entity_redundancy_issues),
-                        len(student_entity_redundancy_issues)
+                        len(student_entity_redundancy_issues),
                     )
         except Exception as e:
             print(
@@ -312,14 +319,14 @@ def expert_reward_func(
                 and len(reference_relationship_redundancy_issues) == 0
             ):
                 relationship_redundancy_issue_count = 1
-                this_score[1] = 1
+                this_score[1] = 0.4
             elif (
                 len(student_relationship_redundancy_issues) > 0
                 and len(reference_relationship_redundancy_issues) > 0
             ):
                 relationship_redundancy_issue_count = max(
                     len(reference_relationship_redundancy_issues),
-                    len(student_relationship_redundancy_issues)
+                    len(student_relationship_redundancy_issues),
                 )
                 redundancy_relationship_f1_scores = []
                 for student_ids_set in student_relationship_redundancy_issues:
@@ -344,7 +351,7 @@ def expert_reward_func(
                 else:
                     relationship_redundancy_issue_count = max(
                         len(reference_relationship_redundancy_issues),
-                        len(student_relationship_redundancy_issues)
+                        len(student_relationship_redundancy_issues),
                     )
         except Exception as e:
             print(
@@ -366,14 +373,14 @@ def expert_reward_func(
                 and len(reference_entity_quality_issues_ids) == 0
             ):
                 entity_quality_issue_count = 1
-                this_score[2] = 1
+                this_score[2] = 0.4
             elif (
                 len(student_entity_quality_issues_ids) > 0
                 and len(reference_entity_quality_issues_ids) > 0
             ):
                 entity_quality_issue_count = max(
                     len(reference_entity_quality_issues_ids),
-                    len(student_entity_quality_issues_ids)
+                    len(student_entity_quality_issues_ids),
                 )
                 f1_score = compute_f1_score(
                     student_entity_quality_issues_ids,
@@ -383,7 +390,7 @@ def expert_reward_func(
             else:
                 entity_quality_issue_count = max(
                     len(reference_entity_quality_issues_ids),
-                    len(student_entity_quality_issues_ids)
+                    len(student_entity_quality_issues_ids),
                 )
         except Exception as e:
             print(
@@ -407,14 +414,14 @@ def expert_reward_func(
                 and len(reference_relationship_quality_issues_ids) == 0
             ):
                 relationship_quality_issue_count = 1
-                this_score[3] = 1
+                this_score[3] = 0.4
             elif (
                 len(student_relationship_quality_issues_ids) > 0
                 and len(reference_relationship_quality_issues_ids) > 0
             ):
                 relationship_quality_issue_count = max(
                     len(reference_relationship_quality_issues_ids),
-                    len(student_relationship_quality_issues_ids)
+                    len(student_relationship_quality_issues_ids),
                 )
                 f1_score = compute_f1_score(
                     student_relationship_quality_issues_ids,
@@ -424,7 +431,7 @@ def expert_reward_func(
             else:
                 relationship_quality_issue_count = max(
                     len(reference_relationship_quality_issues_ids),
-                    len(student_relationship_quality_issues_ids)
+                    len(student_relationship_quality_issues_ids),
                 )
         except Exception as e:
             print(
@@ -444,13 +451,10 @@ def expert_reward_func(
             scores.append(0)
             continue
         weightd_score = (
-            (entity_redundancy_issue_count / total_issue_count)
-            * this_score[0]
-            + (relationship_redundancy_issue_count / total_issue_count)
-            * this_score[1]
+            (entity_redundancy_issue_count / total_issue_count) * this_score[0]
+            + (relationship_redundancy_issue_count / total_issue_count) * this_score[1]
             + (entity_quality_issue_count / total_issue_count) * this_score[2]
-            + (relationship_quality_issue_count / total_issue_count)
-            * this_score[3]
+            + (relationship_quality_issue_count / total_issue_count) * this_score[3]
         )
         scores.append(round(weightd_score, 2))
 
