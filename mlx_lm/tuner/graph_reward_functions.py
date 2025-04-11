@@ -130,7 +130,7 @@ def reward_len(completions, answer: list, **kwargs):
             diff_ratio = (
                 abs(num_completion_issues - num_reference_issues) / num_reference_issues
             )
-            score = math.exp(-(diff_ratio**2) / 2)
+            score = math.exp(-4*(diff_ratio**2))
 
         scores.append(score)
 
