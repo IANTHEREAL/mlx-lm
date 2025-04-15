@@ -264,6 +264,7 @@ def expert_reward_func(
             continue
 
         this_score = 0
+        total_count = 0
 
         try:
             student_entity_redundancy_issues = normalize_affected_ids(
@@ -279,6 +280,11 @@ def expert_reward_func(
                     for reference_issue in reference_issues["entity_redundancy_issues"]
                     if len(reference_issue["affected_ids"]) > 0
                 ]
+            )
+
+            total_count += max(
+                len(student_entity_redundancy_issues),
+                len(reference_entity_redundancy_issues),
             )
 
             if (
@@ -320,6 +326,10 @@ def expert_reward_func(
                     if len(reference_issue["affected_ids"]) > 0
                 ]
             )
+            total_count += max(
+                len(student_relationship_redundancy_issues),
+                len(reference_relationship_redundancy_issues),
+            )
 
             if (
                 len(student_relationship_redundancy_issues) > 0
@@ -352,6 +362,11 @@ def expert_reward_func(
                     ",".join(str(id) for id in sorted(reference_issue["affected_ids"]))
                 )
 
+            total_count += max(
+                len(student_missing_relationship_issues_ids),
+                len(reference_missing_relationship_issues_ids),
+            )
+
             if (
                 len(student_missing_relationship_issues_ids) > 0
                 and len(reference_missing_relationship_issues_ids) > 0
@@ -375,6 +390,11 @@ def expert_reward_func(
                 reference_entity_quality_issues_ids.update(
                     reference_issue["affected_ids"]
                 )
+
+            total_count += max(
+                len(student_entity_quality_issues_ids),
+                len(reference_entity_quality_issues_ids),
+            )
 
             if (
                 len(student_entity_quality_issues_ids) > 0
@@ -402,6 +422,11 @@ def expert_reward_func(
                     reference_issue["affected_ids"]
                 )
 
+            total_count += max(
+                len(student_relationship_quality_issues_ids),
+                len(reference_relationship_quality_issues_ids),
+            )
+
             if (
                 len(student_relationship_quality_issues_ids) > 0
                 and len(reference_relationship_quality_issues_ids) > 0
@@ -418,8 +443,7 @@ def expert_reward_func(
 
         scores.append(
             round(
-                this_score
-                / max(total_reference_issue_count, total_student_issue_count),
+                this_score / total_count,
                 2,
             )
         )
