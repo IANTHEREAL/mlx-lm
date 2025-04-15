@@ -59,7 +59,7 @@ def extract_issues(response: str):
         issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
         affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
         reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
-        confidence_match = re.search(r"confidence:\s*([\w_/]+)\n", issue)
+        confidence_match = re.search(r"confidence:\s*([\w.]+)\n", analysis)
         facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", issue)
 
         if (
