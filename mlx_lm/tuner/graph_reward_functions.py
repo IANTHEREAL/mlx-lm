@@ -59,7 +59,7 @@ def extract_issues(response: str):
         issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
         affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
         reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
-        confidence_match = re.search(r"confidence:\s*([\w.]+)\n", analysis)
+        confidence_match = re.search(r"confidence:\s*([\w.]+)\n", issue)
         facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", issue)
 
         if (
@@ -214,7 +214,9 @@ def strict_format_reward_func(
                         and len(affected_ids) > 0
                     ):
                         reference_score += 0.4
-                    elif issue_type == "missing_relationship" and len(affected_ids) == 2:
+                    elif (
+                        issue_type == "missing_relationship" and len(affected_ids) == 2
+                    ):
                         reference_score += 0.4
 
                 if len(analysis_tags) > 0:
