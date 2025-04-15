@@ -92,15 +92,15 @@ def extract_issues(response: str):
             "facto_search": facto_search,
         }
         # Categorize by issue type
-        if issue_type == "redundancy_entity":
+        if issue_type == "redundancy_entity" and len(affected_ids) >= 2:
             entity_redundancy_issues.append(issue)
-        elif issue_type == "redundancy_relationship":
+        elif issue_type == "redundancy_relationship" and len(affected_ids) >= 2:
             relationship_redundancy_issues.append(issue)
-        elif issue_type == "entity_quality_issue":
+        elif issue_type == "entity_quality_issue" and len(affected_ids) > 0:
             entity_quality_issues.append(issue)
-        elif issue_type == "relationship_quality_issue":
+        elif issue_type == "relationship_quality_issue" and len(affected_ids) > 0:
             relationship_quality_issues.append(issue)
-        elif issue_type == "missing_relationship":
+        elif issue_type == "missing_relationship" and len(affected_ids) == 2:
             missing_relationship_issues.append(issue)
 
     return {
@@ -200,11 +200,11 @@ def strict_format_reward_func(
                         affected_ids_match = []
 
                     # Categorize by issue type
-                    if issue_type == "redundancy_entity" and len(affected_ids) > 0:
+                    if issue_type == "redundancy_entity" and len(affected_ids) >= 2:
                         reference_score += 0.4
                     elif (
                         issue_type == "redundancy_relationship"
-                        and len(affected_ids) > 0
+                        and len(affected_ids) >= 2
                     ):
                         reference_score += 0.4
                     elif issue_type == "entity_quality_issue" and len(affected_ids) > 0:
@@ -214,7 +214,7 @@ def strict_format_reward_func(
                         and len(affected_ids) > 0
                     ):
                         reference_score += 0.4
-                    elif issue_type == "missing_relationship" and len(affected_ids) > 0:
+                    elif issue_type == "missing_relationship" and len(affected_ids) == 2:
                         reference_score += 0.4
 
                 if len(analysis_tags) > 0:
