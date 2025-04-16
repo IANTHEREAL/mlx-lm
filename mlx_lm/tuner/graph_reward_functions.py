@@ -60,7 +60,6 @@ def extract_issues(response: str):
         affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
         reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
         confidence_match = re.search(r"confidence:\s*([\w.]+)\n", issue)
-        facto_search_match = re.search(r"facto_search:\s*([\s\S]*?)\n", issue)
 
         if (
             not issue_type_match
@@ -79,17 +78,13 @@ def extract_issues(response: str):
 
         reasoning = reasoning_match.group(1).strip()
         confidence = confidence_match.group(1).strip()
-        if facto_search_match:
-            facto_search = facto_search_match.group(1).strip()
-        else:
-            facto_search = ""
 
         issue = {
             "issue_type": issue_type,
             "affected_ids": affected_ids,
             "reasoning": reasoning,
             "confidence": confidence,
-            "facto_search": facto_search,
+            "facto_search": "",
         }
         # Categorize by issue type
         if issue_type == "redundancy_entity" and len(affected_ids) >= 2:
@@ -117,15 +112,15 @@ def reward_len(completions, answer: list, **kwargs):
     scores = []
     # print(f"reference answer:\n {answer[0]}")
     for index, response in enumerate(responses):
-        completion_issues = re.findall(
-            r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
-        )
-        reference_issues = re.findall(
-            r'<issue\s*[">]?\s*(.*?)\s*</issue>', answer[index], re.DOTALL
-        )
+        completion_issues = extract_issues(response)
+        reference_issues = extract_issues(answer[index])
 
-        num_completion_issues = len(completion_issues)
-        num_reference_issues = len(reference_issues)
+        num_completion_issues = sum(
+            [len(issue_list) for issue_list in completion_issues.values()]
+        )
+        num_reference_issues = sum(
+            [len(issue_list) for issue_list in reference_issues.values()]
+        )
 
         if num_reference_issues == 0:
             # If there are no reference issues, reward 1 for no completion issues, 0 otherwise.
