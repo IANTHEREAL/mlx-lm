@@ -427,7 +427,7 @@ def grpo_loss(
         "grouped_rewards_mean": mx.mean(grouped_rewards_mean),
         "grouped_rewards_std": mx.mean(grouped_rewards_std),
         "kl": mean_kl,
-        "average_generated_tokens": len(all_completion_texts) // len(batch_indices),
+        "average_generated_tokens": sum([len(c) for c in all_completions]) // len(batch_indices),
         **reward_metrics,
     }
 
