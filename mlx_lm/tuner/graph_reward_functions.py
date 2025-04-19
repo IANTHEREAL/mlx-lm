@@ -1,6 +1,24 @@
 import re
 import math
+import json
 from typing import Callable, List, Optional
+
+
+def extract_json(response: str) -> str:
+    """Extract JSON from the plan response."""
+    json_code_block_pattern = re.compile(
+        r"```json\s*(\[\s*{.*?}\s*\])\s*```", re.DOTALL
+    )
+    match = json_code_block_pattern.search(response)
+    if match:
+        return match.group(1)
+
+    json_code_block_pattern = re.compile(r"```json\s*([\s\S]*?)\s*```", re.DOTALL)
+    match = json_code_block_pattern.search(response)
+    if match:
+        return match.group(1)
+
+    return None
 
 
 def compute_f1_score(student_ids_set, reference_ids_set):
@@ -45,7 +63,16 @@ def normalize_affected_ids(redundancy_sets):
 
 
 def extract_issues(response: str):
-    issue_tags = re.findall(r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL)
+    response_json_str = extract_json(response)
+    if not response_json_str:
+        return {
+            "entity_redundancy_issues": [],
+            "relationship_redundancy_issues": [],
+            "entity_quality_issues": [],
+            "relationship_quality_issues": [],
+            "missing_relationship_issues": [],
+        }
+    issue_tags = json.loads(response_json_str)
 
     entity_redundancy_issues = []
     relationship_redundancy_issues = []
@@ -54,30 +81,15 @@ def extract_issues(response: str):
     missing_relationship_issues = []
 
     # Process each analysis tag
-    for issue in issue_tags:
+    for analysis in issue_tags:
         # Extract issue_type and affected_ids
-        issue_type_match = re.search(r"issue_type:\s*([^\n]*)", issue)
-        affected_ids_match = re.search(r"affected_ids:\s*\[(.*?)\]", issue)
-        reasoning_match = re.search(r"reasoning:\s*([\s\S]*?)\n", issue)
-        confidence_match = re.search(r"confidence:\s*([\w.]+)\n", issue)
+        issue_type = analysis.get("issue_type", None)
+        affected_ids = analysis.get("affected_ids", [])
+        reasoning = analysis.get("reasoning", None)
+        confidence = analysis.get("confidence", None)
 
-        if (
-            not issue_type_match
-            or not affected_ids_match
-            or not reasoning_match
-            or not confidence_match
-        ):
+        if not issue_type or not affected_ids or not reasoning or not confidence:
             continue
-
-        issue_type = issue_type_match.group(1).strip()
-        affected_ids_str = affected_ids_match.group(1).strip()
-        try:
-            affected_ids = [int(id.strip()) for id in affected_ids_str.split(",")]
-        except ValueError:
-            continue
-
-        reasoning = reasoning_match.group(1).strip()
-        confidence = confidence_match.group(1).strip()
 
         issue = {
             "issue_type": issue_type,
@@ -157,42 +169,24 @@ def strict_format_reward_func(
                 scores.append(this_score)
                 continue
 
-            analysis_start_count = response.count("<issue>")
-            analysis_end_count = response.count("</issue>")
-            if analysis_start_count != analysis_end_count:
-                this_score -= abs(analysis_start_count - analysis_end_count) * 0.1
+            response_json_str = extract_json(response)
+            if not response_json_str:
+                scores.append(this_score)
+                continue
 
-            analysis_tags = re.findall(
-                r'<issue\s*[">]?\s*(.*?)\s*</issue>', response, re.DOTALL
-            )
-
-            answer_tags = re.findall(
-                r'<issue\s*[">]?\s*(.*?)\s*</issue>', answer[i], re.DOTALL
-            )
+            analysis_tags = json.loads(response_json_str)
+            answer_json_str = extract_json(answer[i])
+            if not answer_json_str:
+                answer_tags = []
+            else:
+                answer_tags = json.loads(answer_json_str)
 
             if len(answer_tags) > 0:
                 reference_score = 0
                 # Process each analysis tag
                 for analysis in analysis_tags:
-                    # Extract issue_type and affected_ids
-                    issue_type_match = re.search(r"issue_type:\s*([^\n]*)", analysis)
-                    affected_ids_match = re.search(
-                        r"affected_ids:\s*\[(.*?)\]", analysis
-                    )
-
-                    if not issue_type_match or not affected_ids_match:
-                        continue
-
-                    issue_type = issue_type_match.group(1).strip()
-                    affected_ids_str = affected_ids_match.group(1).strip()
-
-                    # Parse affected IDs - could be comma-separated list of integers
-                    try:
-                        affected_ids = [
-                            int(id.strip()) for id in affected_ids_str.split(",")
-                        ]
-                    except Exception as e:
-                        affected_ids_match = []
+                    issue_type = analysis.get("issue_type", None)
+                    affected_ids = analysis.get("affected_ids", [])
 
                     # Categorize by issue type
                     if issue_type == "redundancy_entity" and len(affected_ids) >= 2:
@@ -218,8 +212,10 @@ def strict_format_reward_func(
                     avg_action_score = reference_score / len(analysis_tags)
                 else:
                     avg_action_score = 0
-            else:
+            elif len(analysis_tags) == 0:
                 avg_action_score = 0.4
+            else:
+                avg_action_score = 0
 
             this_score += avg_action_score
             scores.append(round(this_score, 2))
@@ -240,7 +236,7 @@ def expert_reward_func(
             student_issues = extract_issues(response)
             reference_issues = extract_issues(answer[i])
         except Exception as e:
-            print(f"Failed to parse expert_reward_func response {e}")
+            print(f"Failed to parse expert_reward_func response {e}, {response}")
             scores.append(0)
             continue
 

@@ -432,6 +432,7 @@ def grpo_loss(
     }
 
     if is_validation and all_completion_texts:
+    #if all_completion_texts:
         print("\n=== Validation Sample Details ===")
         last_prompt_idx = batch_indices[-1] if batch_indices else 0
         if last_prompt_idx < len(prompt_text):
@@ -539,7 +540,6 @@ def evaluate_grpo(
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
         strict_format_reward_func,
-        reward_len,
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
@@ -601,9 +601,8 @@ def train_grpo(
     train_dataset,
     val_dataset,
     reward_funcs: Optional[List[RewardFunctions]] = [
-        strict_format_reward_func,
         expert_reward_func,
-        reward_len,
+        strict_format_reward_func,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
