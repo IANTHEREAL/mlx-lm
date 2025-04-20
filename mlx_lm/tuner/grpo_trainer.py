@@ -654,8 +654,12 @@ def train_grpo(
             ref_model=ref_model,
         )
 
+        print("compute loss_value_and_grad", mx.get_peak_memory() / 1e9)
+
         grad = average_gradients(grad)
+        print("compute grad", mx.get_peak_memory() / 1e9)
         optimizer.update(model, grad)
+        print("update optimization", mx.get_peak_memory() / 1e9)
 
         return loss, toks, metrics
 
