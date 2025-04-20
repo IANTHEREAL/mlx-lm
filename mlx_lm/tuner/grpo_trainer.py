@@ -190,7 +190,6 @@ def grpo_loss(
             batch_size=batch_size,
         )
 
-    print("group size:", len(all_completions))
     if not all_completions:
         raise ValueError(
             "No completions were generated. Please check your model and inputs."
@@ -250,11 +249,14 @@ def grpo_loss(
     token_log_probs = get_per_token_logps(model, inputs, lengths)
     mx.eval(token_log_probs)
 
+    print("get model logps", mx.get_peak_memory() / 1e9)
+
     if ref_model is None:
         ref_token_log_probs = token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
         mx.eval(ref_token_log_probs)
+        print("get ref model logps", mx.get_peak_memory() / 1e9)
 
     max_len = max(x.shape[0] for x in token_log_probs)
     padded_log_probs = []
@@ -350,6 +352,7 @@ def grpo_loss(
     # Create mask for valid tokens
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
 
+
     # Compute policy ratio
     policy_ratio = mx.exp(
         mx.array(token_log_probs - mx.stop_gradient(ref_token_log_probs))
@@ -374,6 +377,7 @@ def grpo_loss(
 
     # Calculate mean KL divergence for metrics
     mean_kl = ((kl_div * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
+    print("compute kl mean", mx.get_peak_memory() / 1e9)
 
     reward_metrics = {}
     for i, reward_func in enumerate(reward_funcs):
