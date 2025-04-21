@@ -62,22 +62,36 @@ class GRPOTrainingArgs(TrainingArgs):
     )
 
 
-def get_per_token_logps(model: nn.Module, inputs, lengths):
+def get_per_token_logps(model: nn.Module, inputs, lengths, compute_entropy: bool = True):
     logits = model(inputs).astype(mx.float16)
     logits = logits[:, :-1, :]
     targets = inputs[:, 1:]
     per_token_logps = []
+    per_token_entropies = [] if compute_entropy else None
+
     for i in range(logits.shape[0]):
         seq_len = int(lengths[i]) - 1
         seq_logits = logits[i, :seq_len]
         seq_targets = targets[i, :seq_len]
         log_probs = nn.log_softmax(seq_logits, axis=-1)
+
         token_log_probs = mx.take_along_axis(
             log_probs, seq_targets.reshape(seq_len, 1), axis=-1
         ).squeeze(-1)
         per_token_logps.append(token_log_probs)
-    mx.eval(logits)
-    return per_token_logps
+
+        if compute_entropy:
+            # Entropy = - sum(p * log(p))
+            probs = mx.exp(log_probs)
+            token_entropies = -(probs * log_probs).sum(axis=-1)
+            per_token_entropies.append(token_entropies)
+
+    mx.eval(logits) # Keep eval here for logits
+    if compute_entropy:
+        mx.eval(per_token_entropies) # Eval entropies if computed
+        return per_token_logps, per_token_entropies
+    else:
+        return per_token_logps
 
 
 def generate_grpo(
@@ -246,21 +260,23 @@ def grpo_loss(
     attention_mask = mx.stack(attention_masks)
     lengths = attention_mask.sum(axis=1)
 
-    token_log_probs = get_per_token_logps(model, inputs, lengths)
-    mx.eval(token_log_probs)
+    # Calculate for policy model
+    token_log_probs, token_entropies = get_per_token_logps(model, inputs, lengths, compute_entropy=False)
+    mx.eval(token_log_probs, token_entropies)
+    print("get model logps and entropy", mx.get_peak_memory() / 1e9)
 
-    print("get model logps", mx.get_peak_memory() / 1e9)
-
+    # Calculate for reference model (if needed)
     if ref_model is None:
         ref_token_log_probs = token_log_probs
     else:
-        ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
+        ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths, compute_entropy=False) # No entropy needed
         mx.eval(ref_token_log_probs)
         print("get ref model logps", mx.get_peak_memory() / 1e9)
 
     max_len = max(x.shape[0] for x in token_log_probs)
     padded_log_probs = []
     padded_ref_log_probs = []
+    padded_entropies = [] # New list for padded entropies
 
     for i in range(len(token_log_probs)):
         seq_len = token_log_probs[i].shape[0]
@@ -268,9 +284,12 @@ def grpo_loss(
 
         padded_log_probs.append(mx.concatenate([token_log_probs[i], padding]))
         padded_ref_log_probs.append(mx.concatenate([ref_token_log_probs[i], padding]))
+        # Pad entropies too
+        padded_entropies.append(mx.concatenate([token_entropies[i], padding]))
 
     token_log_probs = mx.stack(padded_log_probs)
     ref_token_log_probs = mx.stack(padded_ref_log_probs)
+    token_entropies = mx.stack(padded_entropies) # Stack entropies
 
     all_func_rewards = []
     for reward_func in reward_funcs:
@@ -379,6 +398,10 @@ def grpo_loss(
     mean_kl = ((kl_div * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
     print("compute kl mean", mx.get_peak_memory() / 1e9)
 
+    # Calculate mean entropy for metrics
+    mean_entropy = ((token_entropies * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
+    print("compute entropy mean", mx.get_peak_memory() / 1e9) # Optional print
+
     reward_metrics = {}
     for i, reward_func in enumerate(reward_funcs):
         func_name = reward_func.__name__
@@ -431,6 +454,7 @@ def grpo_loss(
         "grouped_rewards_mean": mx.mean(grouped_rewards_mean),
         "grouped_rewards_std": mx.mean(grouped_rewards_std),
         "kl": mean_kl,
+        "entropy": mean_entropy,
         "average_generated_tokens": sum([len(c) for c in all_completions]) // len(batch_indices),
         **reward_metrics,
     }
@@ -675,6 +699,7 @@ def train_grpo(
         "grouped_rewards_mean": 0,
         "grouped_rewards_std": 0,
         "kl": 0,
+        "entropy": 0,
         "average_generated_tokens": 0,
     }
     for reward_func in reward_funcs:
@@ -721,7 +746,8 @@ def train_grpo(
                     f"Val grouped_rewards_mean {val_metrics['grouped_rewards_mean']:.3f}, "
                     f"Val grouped_rewards_std {val_metrics['grouped_rewards_std']:.3f}, "
                     f"Val Average Generated Tokens {val_metrics['average_generated_tokens']}, "
-                    f"Val kl {val_metrics['kl']:.3f}"
+                    f"Val kl {val_metrics['kl']:.3f}, "
+                    f"Val entropy {val_metrics['entropy']:.3f}"
                 )
 
                 for i, reward_func in enumerate(reward_funcs):
@@ -782,7 +808,8 @@ def train_grpo(
                     f"Grouped rewards mean {float(avg_metrics['grouped_rewards_mean']):.3f}, "
                     f"Grouped rewards std {float(avg_metrics['grouped_rewards_std']):.3f}, "
                     f"Average Generated Tokens {float(avg_metrics['average_generated_tokens'])}, "
-                    f"KL {float(avg_metrics['kl']):.3f}"
+                    f"KL {float(avg_metrics['kl']):.3f}, "
+                    f"Entropy {float(avg_metrics['entropy']):.3f}"
                 )
 
                 for i, reward_func in enumerate(reward_funcs):
