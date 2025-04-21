@@ -164,24 +164,14 @@ def strict_format_reward_func(
                 - abs(response.count("</think>") - 1)
             ) * 0.2
 
-            answer_sections = response.split("</think>")
-            if len(answer_sections) != 2:
-                scores.append(this_score)
-                continue
-
             response_json_str = extract_json(response)
-            if not response_json_str:
+            if response_json_str is None:
                 scores.append(this_score)
                 continue
 
             analysis_tags = json.loads(response_json_str)
-            answer_json_str = extract_json(answer[i])
-            if not answer_json_str:
-                answer_tags = []
-            else:
-                answer_tags = json.loads(answer_json_str)
 
-            if len(answer_tags) > 0:
+            if len(analysis_tags) > 0:
                 reference_score = 0
                 # Process each analysis tag
                 for analysis in analysis_tags:
@@ -212,10 +202,8 @@ def strict_format_reward_func(
                     avg_action_score = reference_score / len(analysis_tags)
                 else:
                     avg_action_score = 0
-            elif len(analysis_tags) == 0:
-                avg_action_score = 0.4
             else:
-                avg_action_score = 0
+                avg_action_score = 0.4
 
             this_score += avg_action_score
             scores.append(round(this_score, 2))
