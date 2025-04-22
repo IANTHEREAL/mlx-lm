@@ -170,6 +170,7 @@ def generate_grpo(
 
                         # If no valid scores, generate one at a time until we find one or reach max attempts
                         while not valid_score_obtained and additional_attempts < max_additional_attempts:
+                            print("👨‍💻 generate another completion to build effective gradident...")
                             additional_attempts += 1
 
                             # Generate one more completion
