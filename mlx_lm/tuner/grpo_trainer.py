@@ -273,6 +273,7 @@ def grpo_loss(
     ref_token_log_probs = mx.stack(padded_ref_log_probs)
 
     all_func_rewards = []
+    print(f"🎉 compute reward for sample: {expanded_types[0]}")
     for reward_func in reward_funcs:
         raw_rewards = reward_func(
             prompts=expanded_prompts,
