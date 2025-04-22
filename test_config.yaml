@@ -1,4 +1,4 @@
-model: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+model: agentica-org/DeepCoder-14B-Preview
 train: false
 fine_tune_type: lora
 training_mode: grpo
@@ -16,12 +16,12 @@ learning_rate: 1.0e-5
 steps_per_report: 1
 steps_per_eval: 10
 resume_adapter_file: null
-adapter_path: material/graph-grpo-0406
-# adapter_path: ""
+# adapter_path: material/graph-grpo-0420
+adapter_path: ""
 save_every: 10
 test: true
 test_batches: 10
-max_seq_length: 3000
+max_seq_length: 4000
 grad_checkpoint: true
 lr_schedule: null
 lora_parameters:
@@ -31,10 +31,10 @@ lora_parameters:
   scale: 10.0
 mask_prompt: false
 reference_model_path: null
-group_size: 5
+group_size: 3
 beta: 0.1
 epsilon: 1.0e-4
-max_completion_length: 1500
+max_completion_length: 2000
 use_chat_template: true
 use_prompt: false
 temperature: 0.6
