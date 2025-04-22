@@ -124,6 +124,7 @@ def generate_grpo(
 
                 # Generate the initial group of completions
                 for g in range(group_size):
+                    print(f"generate completion {g} for {prompt_batch_idx}")
                     current_prompt_idx = prompt_idx + g
                     if current_prompt_idx >= total_prompt_samples:
                         break
@@ -216,8 +217,8 @@ def generate_grpo(
                     valid_score_obtained = True  # Skip validation if not required
 
                 # Add all results to our batch
-                batch_results.extend(prompt_group_results)
-                for completion_ids in prompt_group_results:
+                batch_results.extend(prompt_group_results[-group_size:])
+                for completion_ids in prompt_group_results[-group_size:]:
                     completion_text = tokenizer.decode(completion_ids.tolist())
                     all_completions.append(mx.stop_gradient(completion_ids))
                     all_completion_texts.append(completion_text)
@@ -327,14 +328,14 @@ def grpo_loss(
     token_log_probs = get_per_token_logps(model, inputs, lengths)
     mx.eval(token_log_probs)
 
-    print("get model logps", mx.get_peak_memory() / 1e9)
+    print("get model logps", round(mx.get_peak_memory() / 1e9, 2))
 
     if ref_model is None:
         ref_token_log_probs = token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
         mx.eval(ref_token_log_probs)
-        print("get ref model logps", mx.get_peak_memory() / 1e9)
+        print("get ref model logps", round(mx.get_peak_memory() / 1e9, 2))
 
     max_len = max(x.shape[0] for x in token_log_probs)
     padded_log_probs = []
@@ -456,7 +457,6 @@ def grpo_loss(
 
     # Calculate mean KL divergence for metrics
     mean_kl = ((kl_div * length_mask).sum(axis=1) / length_mask.sum(axis=1)).mean()
-    print("compute kl mean", mx.get_peak_memory() / 1e9)
 
     reward_metrics = {}
     for i, reward_func in enumerate(reward_funcs):
@@ -722,6 +722,8 @@ def train_grpo(
             util_valid_score=True,
         )
 
+        print("generate completion", round(mx.get_peak_memory() / 1e9, 2))
+
         (loss, toks, metrics), grad = loss_value_and_grad(
             model,
             tokenizer=tokenizer,
@@ -736,12 +738,11 @@ def train_grpo(
             ref_model=ref_model,
         )
 
-        print("compute loss_value_and_grad", mx.get_peak_memory() / 1e9)
+        print("compute loss_value_and_grad", round(mx.get_peak_memory() / 1e9, 2))
 
         grad = average_gradients(grad)
-        print("compute grad", mx.get_peak_memory() / 1e9)
         optimizer.update(model, grad)
-        print("update optimization", mx.get_peak_memory() / 1e9)
+        print("compute gradideng and update model", round(mx.get_peak_memory() / 1e9, 2))
 
         return loss, toks, metrics
 
