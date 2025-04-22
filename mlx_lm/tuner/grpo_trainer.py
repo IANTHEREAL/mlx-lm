@@ -89,6 +89,9 @@ def generate_grpo(
     temperature: float,
     batch_size: int,
     end_token: str = "</answer>",
+    prompts_text: List[str] = [],
+    answers_text: List[str] = [],
+    util_valid_score: bool = False
 ):
     try:
         end_sequence = mx.array(tokenizer.encode(end_token))
@@ -114,36 +117,110 @@ def generate_grpo(
             expanded_prompts = mx.repeat(prompt_tensor, group_size, axis=0)
             batch_results = []
             total_prompt_samples = expanded_prompts.shape[0]
-            for prompt_idx in range(total_prompt_samples):
-                current_tokens = []
-                prompt_cache = cache.make_prompt_cache(model)
-                for token, _ in generate_step(
-                    expanded_prompts[prompt_idx],
-                    model,
-                    max_tokens=max_tokens,
-                    sampler=lambda x: mx.random.categorical(x / temperature),
-                    prompt_cache=prompt_cache,
-                ):
-                    if token == tokenizer.eos_token_id:
+            for prompt_idx in range(0, total_prompt_samples, group_size):
+                prompt_group_results = []
+                prompt_group_texts = []
+                prompt_batch_idx = i + prompt_idx // group_size
+
+                # Generate the initial group of completions
+                for g in range(group_size):
+                    current_prompt_idx = prompt_idx + g
+                    if current_prompt_idx >= total_prompt_samples:
                         break
 
-                    current_tokens.append(token)
-                    if len(current_tokens) >= len(end_sequence) and mx.array_equal(
-                        mx.array(current_tokens[-len(end_sequence) :]), end_sequence
+                    current_tokens = []
+                    prompt_cache = cache.make_prompt_cache(model)
+                    for token, _ in generate_step(
+                        expanded_prompts[current_prompt_idx],
+                        model,
+                        max_tokens=max_tokens,
+                        sampler=lambda x: mx.random.categorical(x / temperature),
+                        prompt_cache=prompt_cache,
                     ):
-                        break
+                        if token == tokenizer.eos_token_id:
+                            break
 
-                if current_tokens:
-                    batch_results.append(mx.array(current_tokens))
+                        current_tokens.append(token)
+                        if len(current_tokens) >= len(end_sequence) and mx.array_equal(
+                            mx.array(current_tokens[-len(end_sequence) :]), end_sequence
+                        ):
+                            break
 
-            if batch_results:
-                for j, completion_ids in enumerate(batch_results):
-                    prompt_idx = i + (j // group_size)
-                    if prompt_idx < total_samples:
-                        batch_indices.append(prompt_idx)
-                        completion_text = tokenizer.decode(completion_ids.tolist())
-                        all_completions.append(mx.stop_gradient(completion_ids))
-                        all_completion_texts.append(completion_text)
+                    if current_tokens:
+                        prompt_group_results.append(mx.array(current_tokens))
+                        completion_text = tokenizer.decode(current_tokens)
+                        prompt_group_texts.append(completion_text)
+
+                # Check if we need to validate scores
+                valid_score_obtained = False
+                additional_attempts = 0
+                max_additional_attempts = 10
+
+                if util_valid_score and prompt_group_texts and prompt_batch_idx < len(prompts_text) and prompt_batch_idx < len(answers_text):
+                    try:
+                        # Check initial group of completions
+                        scores = expert_reward_func(
+                            prompts=[prompts_text[prompt_batch_idx]] * len(prompt_group_texts),
+                            completions=prompt_group_texts,
+                            answer=[answers_text[prompt_batch_idx]] * len(prompt_group_texts),
+                        )
+
+                        if scores and sum(scores) > 0:
+                            valid_score_obtained = True
+
+                        # If no valid scores, generate one at a time until we find one or reach max attempts
+                        while not valid_score_obtained and additional_attempts < max_additional_attempts:
+                            additional_attempts += 1
+
+                            # Generate one more completion
+                            current_tokens = []
+                            prompt_cache = cache.make_prompt_cache(model)
+                            for token, _ in generate_step(
+                                expanded_prompts[prompt_idx],  # Use the first prompt in the group
+                                model,
+                                max_tokens=max_tokens,
+                                sampler=lambda x: mx.random.categorical(x / temperature),
+                                prompt_cache=prompt_cache,
+                            ):
+                                if token == tokenizer.eos_token_id:
+                                    break
+
+                                current_tokens.append(token)
+                                if len(current_tokens) >= len(end_sequence) and mx.array_equal(
+                                    mx.array(current_tokens[-len(end_sequence) :]), end_sequence
+                                ):
+                                    break
+
+                            if current_tokens:
+                                new_completion = mx.array(current_tokens)
+                                new_completion_text = tokenizer.decode(current_tokens)
+
+                                # Check if this single completion gets a positive score
+                                single_score = expert_reward_func(
+                                    prompts=[prompts_text[prompt_batch_idx]],
+                                    completions=[new_completion_text],
+                                    answer=[answers_text[prompt_batch_idx]],
+                                )
+
+                                if single_score and single_score[0] > 0:
+                                    # Add this good completion to our results
+                                    prompt_group_results.append(new_completion)
+                                    prompt_group_texts.append(new_completion_text)
+                                    valid_score_obtained = True
+                                    break
+                    except Exception as e:
+                        print(f"Error evaluating scores: {e}")
+                        valid_score_obtained = True  # Continue on error
+                else:
+                    valid_score_obtained = True  # Skip validation if not required
+
+                # Add all results to our batch
+                batch_results.extend(prompt_group_results)
+                for completion_ids in prompt_group_results:
+                    completion_text = tokenizer.decode(completion_ids.tolist())
+                    all_completions.append(mx.stop_gradient(completion_ids))
+                    all_completion_texts.append(completion_text)
+                    batch_indices.append(prompt_batch_idx)
 
     finally:
         mx.clear_cache()
@@ -639,6 +716,9 @@ def train_grpo(
             group_size=args.group_size,
             temperature=args.temperature,
             batch_size=args.batch_size,
+            prompts_text = prompt_lens,
+            answers_text = target_lens,
+            util_valid_score=True,
         )
 
         (loss, toks, metrics), grad = loss_value_and_grad(
