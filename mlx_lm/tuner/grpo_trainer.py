@@ -124,7 +124,6 @@ def generate_grpo(
 
                 # Generate the initial group of completions
                 for g in range(group_size):
-                    print(f"generate completion {g} for {prompt_batch_idx}")
                     current_prompt_idx = prompt_idx + g
                     if current_prompt_idx >= total_prompt_samples:
                         break
@@ -208,6 +207,10 @@ def generate_grpo(
                                     # Add this good completion to our results
                                     prompt_group_results.append(new_completion)
                                     prompt_group_texts.append(new_completion_text)
+                                    # If we have more than group_size completions, pop the first one
+                                    if len(prompt_group_results) > group_size:
+                                        prompt_group_results.pop(0)
+                                        prompt_group_texts.pop(0)
                                     valid_score_obtained = True
                                     break
                     except Exception as e:
@@ -217,8 +220,8 @@ def generate_grpo(
                     valid_score_obtained = True  # Skip validation if not required
 
                 # Add all results to our batch
-                batch_results.extend(prompt_group_results[-group_size:])
-                for completion_ids in prompt_group_results[-group_size:]:
+                batch_results.extend(prompt_group_results)
+                for completion_ids in prompt_group_results:
                     completion_text = tokenizer.decode(completion_ids.tolist())
                     all_completions.append(mx.stop_gradient(completion_ids))
                     all_completion_texts.append(completion_text)
@@ -352,7 +355,6 @@ def grpo_loss(
     ref_token_log_probs = mx.stack(padded_ref_log_probs)
 
     all_func_rewards = []
-    print(f"🎉 compute reward for sample: {expanded_types[0]}")
     for reward_func in reward_funcs:
         raw_rewards = reward_func(
             prompts=expanded_prompts,
@@ -708,6 +710,7 @@ def train_grpo(
 
     def step(batch):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
+        print(f"🎉 compute reward for sample: {type_info}")
 
         all_completions, all_completion_texts, batch_indices = generate_grpo(
             model=model,
