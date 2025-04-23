@@ -180,7 +180,7 @@ def generate_grpo(
                                 expanded_prompts[prompt_idx],  # Use the first prompt in the group
                                 model,
                                 max_tokens=max_tokens,
-                                sampler=lambda x: mx.random.categorical(x / temperature),
+                                sampler=lambda x: mx.random.categorical(x / (temperature+0.2)),
                                 prompt_cache=prompt_cache,
                             ):
                                 if token == tokenizer.eos_token_id:
@@ -196,6 +196,8 @@ def generate_grpo(
                                 new_completion = mx.array(current_tokens)
                                 new_completion_text = tokenizer.decode(current_tokens)
 
+
+                                print(f"Generated another completion ...\n```{new_completion_text[-500:]}")
                                 # Check if this single completion gets a positive score
                                 single_score = expert_reward_func(
                                     prompts=[prompts_text[prompt_batch_idx]],
@@ -779,7 +781,7 @@ def train_grpo(
             train=True,
         ),
     ):
-        if it ==1 or it % args.steps_per_eval == 0 or it == args.iters:
+        if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
         # if it % args.steps_per_eval == 0 or it == args.iters:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
