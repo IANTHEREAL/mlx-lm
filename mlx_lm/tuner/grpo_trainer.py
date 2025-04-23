@@ -170,7 +170,7 @@ def generate_grpo(
 
                         # If no valid scores, generate one at a time until we find one or reach max attempts
                         while not valid_score_obtained and additional_attempts < max_additional_attempts:
-                            print(f"👨‍💻 generate another completion {additional_attempts} to build effective gradident...", flush=True)
+                            print(f"👨‍💻 generate another completion {additional_attempts} to build effective gradident...", round(mx.get_peak_memory() / 1e9, 2), flush=True)
                             additional_attempts += 1
 
                             # Generate one more completion
@@ -710,7 +710,7 @@ def train_grpo(
 
     def step(batch):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
-        print(f"🎉 compute reward for sample: {type_info}")
+        print(f"🎉 start training on samples: {type_info}", flush=True)
 
         all_completions, all_completion_texts, batch_indices = generate_grpo(
             model=model,
@@ -725,7 +725,7 @@ def train_grpo(
             util_valid_score=True,
         )
 
-        print("generate completion", round(mx.get_peak_memory() / 1e9, 2))
+        print(f"generate completion {len(all_completions)}", round(mx.get_peak_memory() / 1e9, 2), flush=True)
 
         (loss, toks, metrics), grad = loss_value_and_grad(
             model,
@@ -779,7 +779,8 @@ def train_grpo(
             train=True,
         ),
     ):
-        if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
+        # if it ==1 or it % args.steps_per_eval == 0 or it == args.iters:
+        if it % args.steps_per_eval == 0 or it == args.iters:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,
