@@ -75,7 +75,8 @@ CONFIG_DEFAULTS = {
     "reference_model_path": None,
     "group_size": 4,
     "beta": 0.1,
-    "epsilon": 1e-4,
+    "epsilon_low": 1e-4,
+    "epsilon_high": 2e-4,
     "max_completion_length": 512,
     "use_chat_template": False,
     "use_prompt": False,
@@ -220,10 +221,16 @@ def build_parser():
         default=0.1,
     )
     parser.add_argument(
-        "--epsilon",
+        "--epsilon-low",
         type=float,
-        help="The Epsilon for numerical stability.",
+        help="The lower bound Epsilon for numerical stability.",
         default=1e-4,
+    )
+    parser.add_argument(
+        "--epsilon-high",
+        type=float,
+        help="The upper bound Epsilon for numerical stability.",
+        default=2e-4,
     )
     parser.add_argument(
         "--use-chat-template",
@@ -326,7 +333,8 @@ def train_model(
             grad_checkpoint=args.grad_checkpoint,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon=args.epsilon,
+            epsilon_low=args.epsilon_low,
+            epsilon_high=args.epsilon_high,
             reference_model_path=args.reference_model_path,
             temperature=args.temperature,
             reward_weights=(
@@ -395,7 +403,8 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon=args.epsilon,
+            epsilon_low=args.epsilon_low,
+            epsilon_high=args.epsilon_high,
             temperature=args.temperature,
             max_tokens=args.max_seq_length,
         )

@@ -36,8 +36,11 @@ class GRPOTrainingArgs(TrainingArgs):
         metadata={"help": "Number of responses per prompt."},
     )
     beta: float = field(default=0.1, metadata={"help": "KL penalty coefficient."})
-    epsilon: float = field(
-        default=1e-4, metadata={"help": "The Epsilon for numerical stability."}
+    epsilon_low: float = field(
+        default=1e-4, metadata={"help": "The lower bound Epsilon for numerical stability."}
+    )
+    epsilon_high: float = field(
+        default=2e-4, metadata={"help": "The upper bound Epsilon for numerical stability."}
     )
     max_completion_length: int = field(
         default=512, metadata={"help": "Number of Generations."}
@@ -244,7 +247,8 @@ def grpo_loss(
     reward_funcs: Optional[List[RewardFunctions]] = None,
     beta: float = 0.1,
     group_size: int = 4,
-    epsilon: float = 1e-4,
+    epsilon_low: float = 1e-4,
+    epsilon_high: float = 2e-4,
     max_tokens: int = 64,
     temperature: float = 0.8,
     reward_weights: Optional[List[float]] = None,
@@ -341,7 +345,8 @@ def grpo_loss(
 
     # Calculate reference model log probs if available
     if ref_model is None:
-        ref_token_log_probs = old_token_log_probs  # Use old policy as reference if no ref model
+        # Use old policy as reference if no ref model - this is more efficient
+        ref_token_log_probs = old_token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
         mx.eval(ref_token_log_probs)  # Ensure calculation completes
@@ -426,7 +431,7 @@ def grpo_loss(
             ]
             for j, idx in enumerate(indices):
                 advantages[idx] = (prompt_rewards[j] - mean_reward) / (
-                    std_reward + epsilon
+                    std_reward + epsilon_low
                 )
         else:
             idx = batch_indices.index(unique_prompt_indices[i])
@@ -444,12 +449,17 @@ def grpo_loss(
 
 
     # Compute policy ratio using OLD log probs for PPO clipping
-    policy_ratio = mx.exp(
-        mx.array(token_log_probs - old_token_log_probs)
-    )
+    policy_ratio = mx.exp(mx.array(token_log_probs - old_token_log_probs))
 
-    # Apply PPO like clipping
-    policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon, 1 + epsilon)
+    # Apply asymmetric PPO clipping instead of symmetric clipping
+    # This handles positive and negative advantages differently
+    # and is more effective in practice
+    policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon_low, 1 + epsilon_high)
+
+    # Track clipping metrics
+    is_low_clipped = (policy_ratio < 1 - epsilon_low) & (advantages.reshape(-1, 1) < 0)
+    is_high_clipped = (policy_ratio > 1 + epsilon_high) & (advantages.reshape(-1, 1) > 0)
+    is_region_clipped = is_low_clipped | is_high_clipped
 
     # Calculate both unclipped and clipped objectives
     unclipped_obj = policy_ratio * advantages.reshape(-1, 1)
@@ -521,6 +531,9 @@ def grpo_loss(
         "grouped_rewards_std": mx.mean(grouped_rewards_std),
         "kl": mean_kl,
         "average_generated_tokens": sum([len(c) for c in all_completions]) // len(batch_indices),
+        "clip_ratio_low": (is_low_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
+        "clip_ratio_high": (is_high_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
+        "clip_ratio_total": (is_region_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
         **reward_metrics,
     }
 
@@ -625,7 +638,8 @@ def evaluate_grpo(
     batch_size,
     num_batches,
     beta: float,
-    epsilon: float,
+    epsilon_low: float,
+    epsilon_high: float,
     group_size: int,
     max_seq_length: int,
     max_tokens: int,
@@ -658,7 +672,8 @@ def evaluate_grpo(
             reward_funcs=reward_funcs,
             beta=beta,
             group_size=group_size,
-            epsilon=epsilon,
+            epsilon_low=epsilon_low,
+            epsilon_high=epsilon_high,
             ref_model=ref_model,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -745,7 +760,8 @@ def train_grpo(
             reward_funcs=reward_funcs,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon=args.epsilon,
+            epsilon_low=args.epsilon_low,
+            epsilon_high=args.epsilon_high,
             ref_model=ref_model,
         )
 
@@ -802,7 +818,8 @@ def train_grpo(
                 max_seq_length=args.max_seq_length,
                 max_tokens=args.max_completion_length,
                 beta=args.beta,
-                epsilon=args.epsilon,
+                epsilon_low=args.epsilon_low,
+                epsilon_high=args.epsilon_high,
                 temperature=args.temperature,
                 iterate_batches=iterate_batches,
             )
