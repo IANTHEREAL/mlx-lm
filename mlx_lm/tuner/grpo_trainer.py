@@ -334,27 +334,19 @@ def grpo_loss(
     attention_mask = mx.stack(attention_masks)
     lengths = attention_mask.sum(axis=1)
 
-    # Store the initial policy log probabilities before any updates
-    # This is the starting point for multi-iteration optimization
     token_log_probs = get_per_token_logps(model, inputs, lengths)
     mx.eval(token_log_probs)
 
     print("get model logps", round(mx.get_peak_memory() / 1e9, 2))
 
-    # Save the initial policy's log probs (as old policy) with gradient stopped
-    # This will be used for PPO clipping in the policy ratio calculation
-    old_token_log_probs = mx.stop_gradient(token_log_probs)
-
     # Calculate reference model log probs if available
     if ref_model is None:
-        # Use old policy as reference if no ref model - this is more efficient
-        ref_token_log_probs = old_token_log_probs
+        ref_token_log_probs = token_log_probs
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
-        mx.eval(ref_token_log_probs)  # Ensure calculation completes
-        ref_token_log_probs = mx.stop_gradient(ref_token_log_probs)  # Stop gradient for ref model
-        print("get ref model logps", round(mx.get_peak_memory() / 1e9, 2))
+        mx.eval(ref_token_log_probs)
 
+    # Pad and stack all three lists consistently
     max_len = max(x.shape[0] for x in token_log_probs)
     padded_log_probs = []
     padded_ref_log_probs = []
@@ -433,7 +425,7 @@ def grpo_loss(
             ]
             for j, idx in enumerate(indices):
                 advantages[idx] = (prompt_rewards[j] - mean_reward) / (
-                    std_reward + epsilon_low
+                    std_reward + 1e-6
                 )
         else:
             idx = batch_indices.index(unique_prompt_indices[i])
@@ -449,9 +441,10 @@ def grpo_loss(
     # Create mask for valid tokens
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
 
-
-    # Compute policy ratio using OLD log probs for PPO clipping
-    policy_ratio = mx.exp(mx.array(token_log_probs - old_token_log_probs))
+    policy_ratio = mx.exp(
+        mx.array(token_log_probs - mx.stop_gradient(ref_token_log_probs))
+    )
+    print(f"compute policy_ratio = {policy_ratio}", flush=True)
 
     # Apply asymmetric PPO clipping instead of symmetric clipping
     # This handles positive and negative advantages differently
@@ -786,6 +779,9 @@ def train_grpo(
         "grouped_rewards_std": 0,
         "kl": 0,
         "average_generated_tokens": 0,
+        "clip_ratio_low": 0,
+        "clip_ratio_high": 0,
+        "clip_ratio_total": 0,
     }
     for reward_func in reward_funcs:
         func_name = reward_func.__name__
