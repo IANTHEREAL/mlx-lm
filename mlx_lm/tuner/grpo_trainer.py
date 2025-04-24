@@ -420,7 +420,7 @@ def grpo_loss(
             ]
             for j, idx in enumerate(indices):
                 advantages[idx] = (prompt_rewards[j] - mean_reward) / (
-                    std_reward + epsilon
+                    std_reward + 1e-4
                 )
         else:
             idx = batch_indices.index(unique_prompt_indices[i])
