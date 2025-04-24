@@ -180,7 +180,7 @@ def generate_grpo(
                                 expanded_prompts[prompt_idx],  # Use the first prompt in the group
                                 model,
                                 max_tokens=max_tokens,
-                                sampler=lambda x: mx.random.categorical(x / (temperature+0.2)),
+                                sampler=lambda x: mx.random.categorical(x / (temperature)),
                                 prompt_cache=prompt_cache,
                             ):
                                 if token == tokenizer.eos_token_id:
@@ -626,7 +626,6 @@ def evaluate_grpo(
     temperature: float,
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
-        strict_format_reward_func,
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
@@ -689,7 +688,6 @@ def train_grpo(
     val_dataset,
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
-        strict_format_reward_func,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
