@@ -173,7 +173,7 @@ def generate_grpo(
 
                         # If no valid scores, generate one at a time until we find one or reach max attempts
                         while not valid_score_obtained and additional_attempts < max_additional_attempts:
-                            print(f"👨‍💻 generate another completion {additional_attempts} to build effective gradident...", flush=True)
+                            print(f"Generate another completion {additional_attempts} to build effective gradident...", round(mx.get_peak_memory() / 1e9, 2), flush=True)
                             additional_attempts += 1
 
                             # Generate one more completion
@@ -183,7 +183,7 @@ def generate_grpo(
                                 expanded_prompts[prompt_idx],  # Use the first prompt in the group
                                 model,
                                 max_tokens=max_tokens,
-                                sampler=lambda x: mx.random.categorical(x / temperature),
+                                sampler=lambda x: mx.random.categorical(x / (temperature)),
                                 prompt_cache=prompt_cache,
                             ):
                                 if token == tokenizer.eos_token_id:
@@ -199,6 +199,8 @@ def generate_grpo(
                                 new_completion = mx.array(current_tokens)
                                 new_completion_text = tokenizer.decode(current_tokens)
 
+
+                                print(f"Generated another completion ...\n```{new_completion_text[-500:]}")
                                 # Check if this single completion gets a positive score
                                 single_score = expert_reward_func(
                                     prompts=[prompts_text[prompt_batch_idx]],
@@ -646,7 +648,6 @@ def evaluate_grpo(
     temperature: float,
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
-        strict_format_reward_func,
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
@@ -710,7 +711,6 @@ def train_grpo(
     val_dataset,
     reward_funcs: Optional[List[RewardFunctions]] = [
         expert_reward_func,
-        strict_format_reward_func,
     ],
     args: GRPOTrainingArgs = GRPOTrainingArgs(),
     loss_fn: callable = grpo_loss,
@@ -733,7 +733,7 @@ def train_grpo(
 
     def step(batch):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
-        print(f"🎉 compute reward for sample: {type_info}")
+        print(f"Start training on samples: {type_info}", flush=True)
 
         all_completions, all_completion_texts, batch_indices = generate_grpo(
             model=model,
@@ -748,7 +748,7 @@ def train_grpo(
             util_valid_score=True,
         )
 
-        print("generate completion", round(mx.get_peak_memory() / 1e9, 2))
+        print(f"generate completion {len(all_completions)}", round(mx.get_peak_memory() / 1e9, 2), flush=True)
 
         (loss, toks, metrics), grad = loss_value_and_grad(
             model,
@@ -804,6 +804,7 @@ def train_grpo(
         ),
     ):
         if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
+        # if it % args.steps_per_eval == 0 or it == args.iters:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,

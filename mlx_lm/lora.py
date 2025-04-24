@@ -347,8 +347,8 @@ def train_model(
         if args.reference_model_path:
             reference_model, _ = load(args.reference_model_path)
         else:
-            # reference_model, _ = load(args.model)
-            reference_model = None
+            reference_model, _ = load(args.model)
+            # reference_model = None
 
         train_grpo(
             model=model,
