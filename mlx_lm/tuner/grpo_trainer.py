@@ -427,6 +427,7 @@ def grpo_loss(
                 advantages[idx] = (prompt_rewards[j] - mean_reward) / (
                     std_reward + 1e-6
                 )
+                print(f"compute advantages({idx}) = {advantages[idx]}")
         else:
             idx = batch_indices.index(unique_prompt_indices[i])
             advantages[idx] = 0.0
@@ -442,7 +443,7 @@ def grpo_loss(
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
 
     policy_ratio = mx.exp(
-        mx.array(token_log_probs - mx.stop_gradient(ref_token_log_probs))
+        mx.array(token_log_probs - mx.stop_gradient(token_log_probs))
     )
     print(f"compute policy_ratio = {policy_ratio}", flush=True)
 
