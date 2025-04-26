@@ -445,7 +445,7 @@ def grpo_loss(
     policy_ratio = mx.exp(
         mx.array(token_log_probs - mx.stop_gradient(token_log_probs))
     )
-    print(f"compute policy_ratio = {policy_ratio}", flush=True)
+    print(f"compute policy_ratio = {mx.mean(policy_ratio)}", flush=True)
 
     # Apply asymmetric PPO clipping instead of symmetric clipping
     # This handles positive and negative advantages differently
