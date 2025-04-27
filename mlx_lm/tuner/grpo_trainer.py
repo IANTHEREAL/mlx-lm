@@ -492,7 +492,7 @@ def grpo_loss(
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
 
     # Compute correct policy ratio using old_log_probs
-    policy_ratio = mx.exp(mx.array(token_log_probs - mx.stop_gradient(old_log_probs)))
+    policy_ratio = mx.exp(mx.array(token_log_probs - old_log_probs))
     print(f"compute policy_ratio = {mx.mean(policy_ratio)}", flush=True)
 
     # Apply asymmetric PPO clipping instead of symmetric clipping
@@ -803,7 +803,7 @@ def train_grpo(
 
         # Generate completions once for this batch
         print(
-            f"Generating completions for batch (will use for {args.num_iterations} updates)",
+            f"Start training on batch - {type_info}",
             flush=True,
         )
         all_completions, all_completion_texts, batch_indices = generate_grpo(
@@ -844,12 +844,12 @@ def train_grpo(
         lengths = attention_mask.sum(axis=1)
 
         # Calculate log_probs using the current model (before any updates)
-        old_log_probs = get_per_token_logps(model, inputs, lengths)
+        old_log_probs = mx.stop_gradient(get_per_token_logps(model, inputs, lengths))
         mx.eval(old_log_probs)
 
         # Perform multiple updates on the same batch data
         for i in range(args.num_iterations):
-            print(f"  Update {i+1}/{args.num_iterations} on current batch", flush=True)
+            print(f"Update {i+1}/{args.num_iterations} on current batch - {type_info}", flush=True)
 
             # Compute loss and gradients using fixed old_log_probs
             (loss, toks, metrics), grad = loss_value_and_grad(
