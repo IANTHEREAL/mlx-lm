@@ -404,7 +404,7 @@ def grpo_loss(
         else:
             padded_old_log_probs.append(
                 mx.concatenate([token_log_probs[i], old_padding])
-            )  # Fallback
+            )
 
     token_log_probs = mx.stack(padded_log_probs)
     ref_token_log_probs = mx.stack(padded_ref_log_probs)
@@ -844,7 +844,9 @@ def train_grpo(
         lengths = attention_mask.sum(axis=1)
 
         # Calculate log_probs using the current model (before any updates)
-        old_log_probs = mx.stop_gradient(get_per_token_logps(model, inputs, lengths))
+        token_log_probs = get_per_token_logps(model, inputs, lengths)
+        # Apply stop_gradient to each array in the list
+        old_log_probs = [mx.stop_gradient(log_prob) for log_prob in token_log_probs]
         mx.eval(old_log_probs)
 
         print("compute old_log_probs", round(mx.get_peak_memory() / 1e9, 2))
