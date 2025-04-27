@@ -795,7 +795,7 @@ def train_grpo(
     state = [model.state, optimizer.state]
     loss_value_and_grad = nn.value_and_grad(model, loss_fn)
 
-    def step(batch):
+    def step(batch, outer_it):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
         total_loss = 0
         total_tokens = 0
@@ -803,7 +803,7 @@ def train_grpo(
 
         # Generate completions once for this batch
         print(
-            f"Start training on batch - {type_info}",
+            f"Start training on batch [Outer Iteration {outer_it}]  - {type_info}",
             flush=True,
         )
         all_completions, all_completion_texts, batch_indices = generate_grpo(
@@ -851,7 +851,7 @@ def train_grpo(
 
         # Perform multiple updates on the same batch data
         for i in range(args.num_iterations):
-            print(f"Update {i+1}/{args.num_iterations} on current batch - {type_info}", flush=True)
+            print(f"Update {outer_it} (Inner {i+1}/{args.num_iterations})", flush=True)
 
             # Compute loss and gradients using fixed old_log_probs
             (loss, toks, metrics), grad = loss_value_and_grad(
@@ -870,17 +870,17 @@ def train_grpo(
                 old_log_probs=old_log_probs,
                 reward_weights=args.reward_weights,
             )
-
             print("compute loss_value_and_grad", round(mx.get_peak_memory() / 1e9, 2))
-
-            # print metrics
-            print(f"{i+1}/{args.num_iterations} Metrics: {metrics}")
 
             # Update model parameters
             grad = average_gradients(grad)
             optimizer.update(model, grad)
-
             print("compute optimizer.update", round(mx.get_peak_memory() / 1e9, 2))
+            # Print the loss for this inner update
+            print(
+                f"Update {outer_it} (Inner {i+1}/{args.num_iterations}) - Loss: {loss:.4f}",
+                flush=True,
+            )
 
             # Accumulate loss and metrics
             total_loss += loss
@@ -899,11 +899,16 @@ def train_grpo(
 
         # Average the accumulated metrics over num_iterations
         avg_metrics = {k: v / args.num_iterations for k, v in total_metrics.items()}
+        avg_loss = total_loss / args.num_iterations
+
+        print(
+            f"[Outer Iteration {outer_it}] Completed {args.num_iterations} updates - Avg Loss: {avg_loss:.4f}",
+            flush=True,
+        )
 
         return total_loss, total_tokens, avg_metrics
 
-    # Rest of train_grpo function (metrics initialization, main loop, etc.)
-    # remains unchanged
+    # Initialize metrics tracking
     losses = 0
     n_tokens = 0
     steps = 0
@@ -927,11 +932,8 @@ def train_grpo(
 
     start = time.perf_counter()
 
-    # Main training loop - stays the same, but step() now performs multiple updates
     for it, batch in zip(
-        range(
-            1, args.iters + 1, args.num_iterations
-        ),  # Increment iteration counter by num_iterations
+        range(1, args.iters + 1),
         iterate_batches(
             dataset=train_dataset,
             batch_size=args.batch_size,
@@ -996,7 +998,7 @@ def train_grpo(
             start = time.perf_counter()
 
         # Call step() which now internally performs num_iterations updates
-        loss, toks, metrics = step(batch)
+        loss, toks, metrics = step(batch, it)
         losses += loss
         n_tokens += toks
         steps += 1
