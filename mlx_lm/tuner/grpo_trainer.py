@@ -847,6 +847,8 @@ def train_grpo(
         old_log_probs = mx.stop_gradient(get_per_token_logps(model, inputs, lengths))
         mx.eval(old_log_probs)
 
+        print("compute old_log_probs", round(mx.get_peak_memory() / 1e9, 2))
+
         # Perform multiple updates on the same batch data
         for i in range(args.num_iterations):
             print(f"Update {i+1}/{args.num_iterations} on current batch - {type_info}", flush=True)
@@ -869,9 +871,16 @@ def train_grpo(
                 reward_weights=args.reward_weights,
             )
 
+            print("compute loss_value_and_grad", round(mx.get_peak_memory() / 1e9, 2))
+
+            # print metrics
+            print(f"{i+1}/{args.num_iterations} Metrics: {metrics}")
+
             # Update model parameters
             grad = average_gradients(grad)
             optimizer.update(model, grad)
+
+            print("compute optimizer.update", round(mx.get_peak_memory() / 1e9, 2))
 
             # Accumulate loss and metrics
             total_loss += loss
