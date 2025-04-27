@@ -37,10 +37,12 @@ class GRPOTrainingArgs(TrainingArgs):
     )
     beta: float = field(default=0.1, metadata={"help": "KL penalty coefficient."})
     epsilon_low: float = field(
-        default=1e-4, metadata={"help": "The lower bound Epsilon for numerical stability."}
+        default=1e-4,
+        metadata={"help": "The lower bound Epsilon for numerical stability."},
     )
     epsilon_high: float = field(
-        default=2e-4, metadata={"help": "The upper bound Epsilon for numerical stability."}
+        default=2e-4,
+        metadata={"help": "The upper bound Epsilon for numerical stability."},
     )
     max_completion_length: int = field(
         default=512, metadata={"help": "Number of Generations."}
@@ -61,6 +63,12 @@ class GRPOTrainingArgs(TrainingArgs):
         default=None,
         metadata={
             "help": "Weights for each reward function. Must match the number of reward functions. If `None`, all rewards are weighted equally with weight `1.0`."
+        },
+    )
+    num_iterations: int = field(
+        default=4,
+        metadata={
+            "help": "Number of policy updates per batch generation. Values > 1 enable PPO clipping."
         },
     )
 
@@ -94,7 +102,7 @@ def generate_grpo(
     end_token: str = "</answer>",
     prompts_text: List[str] = [],
     answers_text: List[str] = [],
-    util_valid_score: bool = False
+    util_valid_score: bool = False,
 ):
     try:
         end_sequence = mx.array(tokenizer.encode(end_token))
@@ -159,39 +167,60 @@ def generate_grpo(
                 additional_attempts = 0
                 max_additional_attempts = 10
 
-                if util_valid_score and prompt_group_texts and prompt_batch_idx < len(prompts_text) and prompt_batch_idx < len(answers_text):
+                if (
+                    util_valid_score
+                    and prompt_group_texts
+                    and prompt_batch_idx < len(prompts_text)
+                    and prompt_batch_idx < len(answers_text)
+                ):
                     try:
                         # Check initial group of completions
                         scores = expert_reward_func(
-                            prompts=[prompts_text[prompt_batch_idx]] * len(prompt_group_texts),
+                            prompts=[prompts_text[prompt_batch_idx]]
+                            * len(prompt_group_texts),
                             completions=prompt_group_texts,
-                            answer=[answers_text[prompt_batch_idx]] * len(prompt_group_texts),
+                            answer=[answers_text[prompt_batch_idx]]
+                            * len(prompt_group_texts),
                         )
 
                         if scores and sum(scores) > 0:
                             valid_score_obtained = True
 
                         # If no valid scores, generate one at a time until we find one or reach max attempts
-                        while not valid_score_obtained and additional_attempts < max_additional_attempts:
-                            print(f"Generate another completion {additional_attempts} to build effective gradident...", round(mx.get_peak_memory() / 1e9, 2), flush=True)
+                        while (
+                            not valid_score_obtained
+                            and additional_attempts < max_additional_attempts
+                        ):
+                            print(
+                                f"Generate another completion {additional_attempts} to build effective gradident...",
+                                round(mx.get_peak_memory() / 1e9, 2),
+                                flush=True,
+                            )
                             additional_attempts += 1
 
                             # Generate one more completion
                             current_tokens = []
                             prompt_cache = cache.make_prompt_cache(model)
                             for token, _ in generate_step(
-                                expanded_prompts[prompt_idx],  # Use the first prompt in the group
+                                expanded_prompts[
+                                    prompt_idx
+                                ],  # Use the first prompt in the group
                                 model,
                                 max_tokens=max_tokens,
-                                sampler=lambda x: mx.random.categorical(x / (temperature)),
+                                sampler=lambda x: mx.random.categorical(
+                                    x / (temperature)
+                                ),
                                 prompt_cache=prompt_cache,
                             ):
                                 if token == tokenizer.eos_token_id:
                                     break
 
                                 current_tokens.append(token)
-                                if len(current_tokens) >= len(end_sequence) and mx.array_equal(
-                                    mx.array(current_tokens[-len(end_sequence) :]), end_sequence
+                                if len(current_tokens) >= len(
+                                    end_sequence
+                                ) and mx.array_equal(
+                                    mx.array(current_tokens[-len(end_sequence) :]),
+                                    end_sequence,
                                 ):
                                     break
 
@@ -199,8 +228,9 @@ def generate_grpo(
                                 new_completion = mx.array(current_tokens)
                                 new_completion_text = tokenizer.decode(current_tokens)
 
-
-                                print(f"Generated another completion ...\n```{new_completion_text[-500:]}")
+                                print(
+                                    f"Generated another completion ...\n```{new_completion_text[-500:]}"
+                                )
                                 # Check if this single completion gets a positive score
                                 single_score = expert_reward_func(
                                     prompts=[prompts_text[prompt_batch_idx]],
@@ -256,6 +286,7 @@ def grpo_loss(
     reward_weights: Optional[List[float]] = None,
     batch_size: int = 1,
     is_validation: bool = False,
+    old_log_probs=None,  # Add parameter for old_log_probs
 ):
     prompt_tokens, _, prompt_text, answer_text, type_info = batch
 
@@ -339,9 +370,13 @@ def grpo_loss(
 
     print("get model logps", round(mx.get_peak_memory() / 1e9, 2))
 
-    # Calculate reference model log probs if available
+    # Use old_log_probs if provided, otherwise default to current token_log_probs
+    # This is equivalent to policy_ratio=1 when old_log_probs is None
+    log_probs_old = old_log_probs if old_log_probs is not None else token_log_probs
+
+    # Calculate reference model log probs for KL divergence (separate from old_log_probs)
     if ref_model is None:
-        ref_token_log_probs = token_log_probs
+        ref_token_log_probs = token_log_probs  # Fallback if no ref_model
     else:
         ref_token_log_probs = get_per_token_logps(ref_model, inputs, lengths)
         mx.eval(ref_token_log_probs)
@@ -350,6 +385,7 @@ def grpo_loss(
     max_len = max(x.shape[0] for x in token_log_probs)
     padded_log_probs = []
     padded_ref_log_probs = []
+    padded_old_log_probs = []
 
     for i in range(len(token_log_probs)):
         seq_len = token_log_probs[i].shape[0]
@@ -358,8 +394,21 @@ def grpo_loss(
         padded_log_probs.append(mx.concatenate([token_log_probs[i], padding]))
         padded_ref_log_probs.append(mx.concatenate([ref_token_log_probs[i], padding]))
 
+        # Pad old_log_probs
+        old_len = log_probs_old[i].shape[0] if i < len(log_probs_old) else 0
+        old_padding = (
+            mx.zeros((max_len - old_len,)) if old_len > 0 else mx.zeros((max_len,))
+        )
+        if old_len > 0:
+            padded_old_log_probs.append(mx.concatenate([log_probs_old[i], old_padding]))
+        else:
+            padded_old_log_probs.append(
+                mx.concatenate([token_log_probs[i], old_padding])
+            )  # Fallback
+
     token_log_probs = mx.stack(padded_log_probs)
     ref_token_log_probs = mx.stack(padded_ref_log_probs)
+    old_log_probs = mx.stack(padded_old_log_probs)
 
     all_func_rewards = []
     for reward_func in reward_funcs:
@@ -442,9 +491,8 @@ def grpo_loss(
     # Create mask for valid tokens
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
 
-    policy_ratio = mx.exp(
-        mx.array(token_log_probs - mx.stop_gradient(token_log_probs))
-    )
+    # Compute correct policy ratio using old_log_probs
+    policy_ratio = mx.exp(mx.array(token_log_probs - mx.stop_gradient(old_log_probs)))
     print(f"compute policy_ratio = {mx.mean(policy_ratio)}", flush=True)
 
     # Apply asymmetric PPO clipping instead of symmetric clipping
@@ -454,7 +502,9 @@ def grpo_loss(
 
     # Track clipping metrics
     is_low_clipped = (policy_ratio < 1 - epsilon_low) & (advantages.reshape(-1, 1) < 0)
-    is_high_clipped = (policy_ratio > 1 + epsilon_high) & (advantages.reshape(-1, 1) > 0)
+    is_high_clipped = (policy_ratio > 1 + epsilon_high) & (
+        advantages.reshape(-1, 1) > 0
+    )
     is_region_clipped = is_low_clipped | is_high_clipped
 
     # Calculate both unclipped and clipped objectives
@@ -526,15 +576,28 @@ def grpo_loss(
         "grouped_rewards_mean": mx.mean(grouped_rewards_mean),
         "grouped_rewards_std": mx.mean(grouped_rewards_std),
         "kl": mean_kl,
-        "average_generated_tokens": sum([len(c) for c in all_completions]) // len(batch_indices),
-        "clip_ratio_low": (is_low_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
-        "clip_ratio_high": (is_high_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
-        "clip_ratio_total": (is_region_clipped * length_mask).sum() / length_mask.sum() if length_mask.sum() > 0 else mx.zeros(1),
+        "average_generated_tokens": sum([len(c) for c in all_completions])
+        // len(batch_indices),
+        "clip_ratio_low": (
+            (is_low_clipped * length_mask).sum() / length_mask.sum()
+            if length_mask.sum() > 0
+            else mx.zeros(1)
+        ),
+        "clip_ratio_high": (
+            (is_high_clipped * length_mask).sum() / length_mask.sum()
+            if length_mask.sum() > 0
+            else mx.zeros(1)
+        ),
+        "clip_ratio_total": (
+            (is_region_clipped * length_mask).sum() / length_mask.sum()
+            if length_mask.sum() > 0
+            else mx.zeros(1)
+        ),
         **reward_metrics,
     }
 
     if is_validation and all_completion_texts:
-    #if all_completion_texts:
+        # if all_completion_texts:
         print("\n=== Validation Sample Details ===")
         last_prompt_idx = batch_indices[-1] if batch_indices else 0
         if last_prompt_idx < len(prompt_text):
@@ -673,6 +736,8 @@ def evaluate_grpo(
             temperature=temperature,
             max_tokens=max_tokens,
             is_validation=True,
+            old_log_probs=None,
+            reward_weights=None,
         )
 
         all_losses += losses * toks
@@ -712,7 +777,7 @@ def train_grpo(
     training_callback: TrainingCallback = None,
 ):
     print(
-        f"Starting GRPO training with {len(reward_funcs)} reward functions..., iters: {args.iters}"
+        f"Starting GRPO training with {len(reward_funcs)} reward functions..., iters: {args.iters}, num_iterations: {args.num_iterations}"
     )
     world = mx.distributed.init()
     world_size = world.size()
@@ -724,11 +789,19 @@ def train_grpo(
         grad_checkpoint(model.layers[0])
 
     state = [model.state, optimizer.state]
+    loss_value_and_grad = nn.value_and_grad(model, loss_fn)
 
     def step(batch):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
-        print(f"Start training on samples: {type_info}", flush=True)
+        total_loss = 0
+        total_tokens = 0
+        total_metrics = {}
 
+        # Generate completions once for this batch
+        print(
+            f"Generating completions for batch (will use for {args.num_iterations} updates)",
+            flush=True,
+        )
         all_completions, all_completion_texts, batch_indices = generate_grpo(
             model=model,
             tokenizer=tokenizer,
@@ -737,38 +810,87 @@ def train_grpo(
             group_size=args.group_size,
             temperature=args.temperature,
             batch_size=args.batch_size,
-            prompts_text = prompt_lens,
-            answers_text = target_lens,
+            prompts_text=prompt_lens,
+            answers_text=target_lens,
             util_valid_score=True,
         )
 
-        print(f"generate completion {len(all_completions)}", round(mx.get_peak_memory() / 1e9, 2), flush=True)
+        # Prepare inputs for log probability calculation
+        max_length = max(ids.shape[0] for ids in all_completions)
+        padded_completions = []
+        attention_masks = []
 
-        (loss, toks, metrics), grad = loss_value_and_grad(
-            model,
-            tokenizer=tokenizer,
-            batch=(prompt_tokens, targets, prompt_lens, target_lens, type_info),
-            completions=all_completions,
-            completion_texts=all_completion_texts,
-            batch_indices=batch_indices,
-            reward_funcs=reward_funcs,
-            beta=args.beta,
-            group_size=args.group_size,
-            epsilon_low=args.epsilon_low,
-            epsilon_high=args.epsilon_high,
-            ref_model=ref_model,
-        )
+        for completion_ids in all_completions:
+            completion_tensor = mx.array(completion_ids.tolist())
+            padding_length = max_length - completion_tensor.shape[0]
+            if padding_length > 0:
+                padding = mx.zeros((padding_length,), dtype=completion_tensor.dtype)
+                padded_ids = mx.concatenate([completion_tensor, padding])
+                mask = mx.concatenate(
+                    [mx.ones_like(completion_tensor), mx.zeros_like(padding)]
+                )
+            else:
+                padded_ids = completion_tensor
+                mask = mx.ones_like(completion_tensor)
+            padded_completions.append(padded_ids)
+            attention_masks.append(mask)
 
-        print("compute loss_value_and_grad", round(mx.get_peak_memory() / 1e9, 2))
+        inputs = mx.stack(padded_completions)
+        attention_mask = mx.stack(attention_masks)
+        lengths = attention_mask.sum(axis=1)
 
-        grad = average_gradients(grad)
-        optimizer.update(model, grad)
-        print("compute gradideng and update model", round(mx.get_peak_memory() / 1e9, 2))
+        # Calculate log_probs using the current model (before any updates)
+        old_log_probs = get_per_token_logps(model, inputs, lengths)
+        mx.eval(old_log_probs)
 
-        return loss, toks, metrics
+        # Perform multiple updates on the same batch data
+        for i in range(args.num_iterations):
+            print(f"  Update {i+1}/{args.num_iterations} on current batch", flush=True)
 
-    loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            # Compute loss and gradients using fixed old_log_probs
+            (loss, toks, metrics), grad = loss_value_and_grad(
+                model,
+                tokenizer=tokenizer,
+                batch=(prompt_tokens, targets, prompt_lens, target_lens, type_info),
+                completions=all_completions,
+                completion_texts=all_completion_texts,
+                batch_indices=batch_indices,
+                reward_funcs=reward_funcs,
+                beta=args.beta,
+                group_size=args.group_size,
+                epsilon_low=args.epsilon_low,
+                epsilon_high=args.epsilon_high,
+                ref_model=ref_model,
+                old_log_probs=old_log_probs,
+                reward_weights=args.reward_weights,
+            )
 
+            # Update model parameters
+            grad = average_gradients(grad)
+            optimizer.update(model, grad)
+
+            # Accumulate loss and metrics
+            total_loss += loss
+            total_tokens += toks
+
+            # Initialize or accumulate metrics
+            if not total_metrics:
+                total_metrics = {k: v for k, v in metrics.items()}
+            else:
+                for k, v in metrics.items():
+                    total_metrics[k] += v
+
+            # Clear cache after each update
+            mx.clear_cache()
+            mx.eval(state)
+
+        # Average the accumulated metrics over num_iterations
+        avg_metrics = {k: v / args.num_iterations for k, v in total_metrics.items()}
+
+        return total_loss, total_tokens, avg_metrics
+
+    # Rest of train_grpo function (metrics initialization, main loop, etc.)
+    # remains unchanged
     losses = 0
     n_tokens = 0
     steps = 0
@@ -791,8 +913,12 @@ def train_grpo(
         accumulated_metrics[f"{func_name}_coverage"] = 0
 
     start = time.perf_counter()
+
+    # Main training loop - stays the same, but step() now performs multiple updates
     for it, batch in zip(
-        range(1, args.iters + 1),
+        range(
+            1, args.iters + 1, args.num_iterations
+        ),  # Increment iteration counter by num_iterations
         iterate_batches(
             dataset=train_dataset,
             batch_size=args.batch_size,
@@ -800,8 +926,8 @@ def train_grpo(
             train=True,
         ),
     ):
-        if it == 1 or it % args.steps_per_eval == 0 or it == args.iters:
-        # if it % args.steps_per_eval == 0 or it == args.iters:
+        # Evaluation logic
+        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,
@@ -856,12 +982,11 @@ def train_grpo(
 
             start = time.perf_counter()
 
+        # Call step() which now internally performs num_iterations updates
         loss, toks, metrics = step(batch)
         losses += loss
         n_tokens += toks
         steps += 1
-
-        mx.clear_cache()
 
         for k, v in metrics.items():
             accumulated_metrics[k] += v
@@ -942,6 +1067,7 @@ def train_grpo(
                 f"{args.adapter_file} and {checkpoint}."
             )
 
+    # Final save
     adapter_weights = dict(tree_flatten(model.trainable_parameters()))
     mx.save_safetensors(str(args.adapter_file), adapter_weights)
     print(f"Saved final weights to {args.adapter_file}.")
