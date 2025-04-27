@@ -777,7 +777,11 @@ def train_grpo(
     training_callback: TrainingCallback = None,
 ):
     print(
-        f"Starting GRPO training with {len(reward_funcs)} reward functions..., iters: {args.iters}, num_iterations: {args.num_iterations}"
+        f"Starting GRPO training with {len(reward_funcs)} reward functions..., "
+        f"iters: {args.iters}, num_iterations: {args.num_iterations}, "
+        f"beta: {args.beta}, group_size: {args.group_size}, "
+        f"epsilon: {args.epsilon_low}, epsilon_high: {args.epsilon_high}, "
+        f"temperature: {args.temperature}, max_tokens: {args.max_completion_length}"
     )
     world = mx.distributed.init()
     world_size = world.size()

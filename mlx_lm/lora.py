@@ -75,13 +75,14 @@ CONFIG_DEFAULTS = {
     "reference_model_path": None,
     "group_size": 4,
     "beta": 0.1,
-    "epsilon_low": 1e-4,
+    "epsilon": 1e-4,
     "epsilon_high": 2e-4,
     "max_completion_length": 512,
     "use_chat_template": False,
     "use_prompt": False,
     "temperature": 0.8,
     "reward_weights": None,
+    "num_iterations": 4,
 }
 
 
@@ -221,7 +222,7 @@ def build_parser():
         default=0.1,
     )
     parser.add_argument(
-        "--epsilon-low",
+        "--epsilon",
         type=float,
         help="The lower bound Epsilon for numerical stability.",
         default=1e-4,
@@ -255,6 +256,12 @@ def build_parser():
         type=str,
         help="Weights for each reward function. Must match the number of reward functions and be in this format [0.1, 0.2, 0.3, 0.4, 0.5]. If not given, all rewards are weighted equally with weight `1.0`.",
         default=None,
+    )
+    parser.add_argument(
+        "--num-iterations",
+        type=int,
+        help="Number of policy updates per batch generation. Values > 1 enable PPO clipping.",
+        default=4,
     )
     return parser
 
@@ -333,7 +340,7 @@ def train_model(
             grad_checkpoint=args.grad_checkpoint,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon_low=args.epsilon_low,
+            epsilon_low=args.epsilon,
             epsilon_high=args.epsilon_high,
             reference_model_path=args.reference_model_path,
             temperature=args.temperature,
@@ -342,6 +349,7 @@ def train_model(
                 if args.reward_weights
                 else None
             ),
+            num_iterations=args.num_iterations,
         )
 
         if args.reference_model_path:
@@ -404,7 +412,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon_low=args.epsilon_low,
+            epsilon_low=args.epsilon,
             epsilon_high=args.epsilon_high,
             temperature=args.temperature,
             max_tokens=args.max_seq_length,
