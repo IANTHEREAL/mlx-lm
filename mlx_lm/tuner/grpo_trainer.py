@@ -944,7 +944,7 @@ def train_grpo(
         ),
     ):
         # Evaluation logic
-        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
+        if (it == 1 or it % args.steps_per_eval == 0 or it >= args.iters):
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,
@@ -953,7 +953,7 @@ def train_grpo(
                 ref_model=ref_model,
                 reward_funcs=reward_funcs,
                 tokenizer=tokenizer,
-                group_size=args.group_size,
+                group_size=3,
                 batch_size=args.batch_size,
                 num_batches=args.val_batches,
                 max_seq_length=args.max_seq_length,
