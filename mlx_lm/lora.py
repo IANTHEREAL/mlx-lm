@@ -83,6 +83,7 @@ CONFIG_DEFAULTS = {
     "temperature": 0.8,
     "reward_weights": None,
     "num_iterations": 4,
+    "enable_overlong_filtering": False,
 }
 
 
@@ -263,6 +264,12 @@ def build_parser():
         help="Number of policy updates per batch generation. Values > 1 enable PPO clipping.",
         default=4,
     )
+    parser.add_argument(
+        "--enable-overlong-filtering",
+        action="store_true",
+        help="Enable overlong filtering to mask loss for truncated sequences. This helps preserve long-context reasoning.",
+        default=None,
+    )
     return parser
 
 
@@ -350,6 +357,7 @@ def train_model(
                 else None
             ),
             num_iterations=args.num_iterations,
+            enable_overlong_filtering=args.enable_overlong_filtering,
         )
 
         if args.reference_model_path:
@@ -416,6 +424,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             epsilon_high=args.epsilon_high,
             temperature=args.temperature,
             max_tokens=args.max_seq_length,
+            enable_overlong_filtering=args.enable_overlong_filtering,
         )
 
         test_ppl = math.exp(test_loss)
