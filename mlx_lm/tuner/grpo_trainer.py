@@ -71,6 +71,12 @@ class GRPOTrainingArgs(TrainingArgs):
             "help": "Number of policy updates per batch generation. Values > 1 enable PPO clipping."
         },
     )
+    enable_overlong_filtering: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable overlong filtering to mask loss for truncated sequences. This helps preserve long-context reasoning."
+        },
+    )
 
 
 def get_per_token_logps(model: nn.Module, inputs, lengths):
@@ -287,6 +293,7 @@ def grpo_loss(
     batch_size: int = 1,
     is_validation: bool = False,
     old_log_probs=None,  # Add parameter for old_log_probs
+    enable_overlong_filtering: bool = False,
 ):
     prompt_tokens, _, prompt_text, answer_text, type_info = batch
 
@@ -490,6 +497,65 @@ def grpo_loss(
 
     # Create mask for valid tokens
     length_mask = mx.arange(inputs.shape[1] - 1)[None, :] < (lengths[:, None] - 1)
+
+    # Implement overlong filtering logic
+    if enable_overlong_filtering:
+        print("enable_overlong_filtering", flush=True)
+        # Identify truncated sequences (those reaching max_tokens)
+        is_truncated = []
+        # Check if any tokens represent an end token in the vocabulary
+        eos_id = tokenizer.eos_token_id
+        # Try to encode "</answer>" as a common end token if it exists in the vocabulary
+        try:
+            end_token_ids = tokenizer.encode("</answer>")
+            has_end_token = len(end_token_ids) > 0
+        except:
+            has_end_token = False
+            end_token_ids = []
+
+        for i, completion_ids in enumerate(all_completions):
+            # A sequence is considered truncated if it reaches max_tokens
+            # and doesn't end with an end token or EOS token
+            if len(completion_ids) >= max_tokens:
+                # Check if the sequence ends with EOS
+                if completion_ids[-1] == eos_id:
+                    is_truncated.append(False)
+                    continue
+
+                # Check if it ends with the end token sequence
+                if has_end_token and len(completion_ids) >= len(end_token_ids):
+                    last_tokens = completion_ids[-len(end_token_ids) :]
+                    if mx.array_equal(mx.array(last_tokens), mx.array(end_token_ids)):
+                        is_truncated.append(False)
+                        continue
+
+                # If we get here, the sequence was truncated
+                is_truncated.append(True)
+                print(f"truncated sequence index {i}", flush=True)
+            else:
+                is_truncated.append(False)
+
+        is_truncated = mx.array(is_truncated)
+
+        # For truncated sequences, completely mask all tokens
+        if mx.any(is_truncated):
+            # Create a mask for truncated sequences
+            truncation_mask = mx.ones_like(length_mask)
+            for i, truncated in enumerate(is_truncated):
+                if truncated:
+                    # Mask all tokens for truncated sequences
+                    seq_len = int(lengths[i]) - 1
+                    truncation_mask[i, :seq_len] = 0
+
+            # Apply truncation mask to the length mask
+            length_mask = length_mask * truncation_mask
+
+            # Log how many sequences were truncated
+            truncated_count = mx.sum(is_truncated)
+            if is_validation:
+                print(
+                    f"Overlong filtering applied to {truncated_count} out of {len(is_truncated)} sequences"
+                )
 
     # Compute correct policy ratio using old_log_probs
     policy_ratio = mx.exp(mx.array(token_log_probs - old_log_probs))
@@ -708,6 +774,7 @@ def evaluate_grpo(
     ],
     loss_fn: callable = grpo_loss,
     iterate_batches: callable = iterate_grpo_batches,
+    enable_overlong_filtering: bool = False,
 ):
     all_losses = 0
     ntokens = 0
@@ -738,6 +805,7 @@ def evaluate_grpo(
             is_validation=True,
             old_log_probs=None,
             reward_weights=None,
+            enable_overlong_filtering=enable_overlong_filtering,
         )
 
         all_losses += losses * toks
@@ -781,7 +849,8 @@ def train_grpo(
         f"iters: {args.iters}, num_iterations: {args.num_iterations}, "
         f"beta: {args.beta}, group_size: {args.group_size}, "
         f"epsilon: {args.epsilon_low}, epsilon_high: {args.epsilon_high}, "
-        f"temperature: {args.temperature}, max_tokens: {args.max_completion_length}"
+        f"temperature: {args.temperature}, max_tokens: {args.max_completion_length}, "
+        f"overlong_filtering: {args.enable_overlong_filtering}"
     )
     world = mx.distributed.init()
     world_size = world.size()
@@ -871,6 +940,7 @@ def train_grpo(
                 ref_model=ref_model,
                 old_log_probs=old_log_probs,
                 reward_weights=args.reward_weights,
+                enable_overlong_filtering=args.enable_overlong_filtering,
             )
             print("compute loss_value_and_grad", round(mx.get_peak_memory() / 1e9, 2))
 
@@ -944,7 +1014,7 @@ def train_grpo(
         ),
     ):
         # Evaluation logic
-        if (it == 1 or it % args.steps_per_eval == 0 or it >= args.iters):
+        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,
@@ -963,6 +1033,7 @@ def train_grpo(
                 epsilon_high=args.epsilon_high,
                 temperature=args.temperature,
                 iterate_batches=iterate_batches,
+                enable_overlong_filtering=args.enable_overlong_filtering,
             )
             val_time = time.perf_counter() - stop
             if rank == 0:
