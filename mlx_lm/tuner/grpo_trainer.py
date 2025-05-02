@@ -808,6 +808,8 @@ def evaluate_grpo(
             enable_overlong_filtering=enable_overlong_filtering,
         )
 
+        print(f"losses: {losses}, toks: {toks}")
+
         all_losses += losses * toks
         ntokens += toks
 
@@ -825,6 +827,7 @@ def evaluate_grpo(
 
     avg_metrics = {k: (v / ntokens).item() for k, v in all_metrics.items()}
     avg_loss = (all_losses / ntokens).item()
+    print(f"avg_loss: {avg_loss}, ntokens: {ntokens}")
 
     return avg_loss, ntokens, avg_metrics
 
