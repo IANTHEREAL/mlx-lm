@@ -869,7 +869,7 @@ def train_grpo(
 
     def step(batch, outer_it):
         prompt_tokens, targets, prompt_lens, target_lens, type_info = batch
-        total_loss = 0
+        total_loss_weighted = 0
         total_tokens = 0
         total_metrics = {}
 
@@ -958,7 +958,7 @@ def train_grpo(
             )
 
             # Accumulate loss and metrics
-            total_loss += loss
+            total_loss_weighted += loss * toks
             total_tokens += toks
 
             # Initialize or accumulate metrics
@@ -974,14 +974,14 @@ def train_grpo(
 
         # Average the accumulated metrics over num_iterations
         avg_metrics = {k: v / args.num_iterations for k, v in total_metrics.items()}
-        avg_loss = total_loss / args.num_iterations
+        avg_loss = total_loss_weighted / total_tokens
 
         print(
             f"[Outer Iteration {outer_it}] Completed {args.num_iterations} updates - Avg Loss: {avg_loss:.4f}",
             flush=True,
         )
 
-        return total_loss, total_tokens, avg_metrics
+        return avg_loss, total_tokens, avg_metrics
 
     # Initialize metrics tracking
     losses = 0
@@ -1016,63 +1016,6 @@ def train_grpo(
             train=True,
         ),
     ):
-        # Evaluation logic
-        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
-            stop = time.perf_counter()
-            val_loss, val_ntokens, val_metrics = evaluate_grpo(
-                model=model,
-                dataset=val_dataset,
-                loss_fn=loss_fn,
-                ref_model=ref_model,
-                reward_funcs=reward_funcs,
-                tokenizer=tokenizer,
-                group_size=3,
-                batch_size=args.batch_size,
-                num_batches=args.val_batches,
-                max_seq_length=args.max_seq_length,
-                max_tokens=args.max_completion_length,
-                beta=args.beta,
-                epsilon_low=args.epsilon_low,
-                epsilon_high=args.epsilon_high,
-                temperature=args.temperature,
-                iterate_batches=iterate_batches,
-                enable_overlong_filtering=args.enable_overlong_filtering,
-            )
-            val_time = time.perf_counter() - stop
-            if rank == 0:
-                val_metrics_str = (
-                    f"Val loss {val_loss:.3f}, "
-                    f"Val total_rewards_mean {val_metrics['total_rewards_mean']:.3f}, "
-                    f"Val total_rewards_std {val_metrics['total_rewards_std']:.3f}, "
-                    f"Val grouped_rewards_mean {val_metrics['grouped_rewards_mean']:.3f}, "
-                    f"Val grouped_rewards_std {val_metrics['grouped_rewards_std']:.3f}, "
-                    f"Val Average Generated Tokens {val_metrics['average_generated_tokens']}, "
-                    f"Val kl {val_metrics['kl']:.3f}"
-                )
-
-                for i, reward_func in enumerate(reward_funcs):
-                    val_metrics_str += (
-                        f", Val {reward_func.__name__}_mean {val_metrics[f'{reward_func.__name__}_mean']:.3f}, "
-                        f"Val {reward_func.__name__}_std {val_metrics[f'{reward_func.__name__}_std']:.3f}"
-                    )
-
-                print(
-                    f"Iter {it}: {val_metrics_str}, " f"Val took {val_time:.3f}s",
-                    flush=True,
-                )
-
-            if training_callback is not None:
-                training_callback.on_val_loss_report(
-                    {
-                        "iteration": it,
-                        "val_loss": val_loss,
-                        **{f"val_{k}": v for k, v in val_metrics.items()},
-                        "val_time": val_time,
-                    }
-                )
-
-            start = time.perf_counter()
-
         # Call step() which now internally performs num_iterations updates
         loss, toks, metrics = step(batch, it)
         losses += loss
@@ -1144,6 +1087,63 @@ def train_grpo(
             n_tokens = 0
             steps = 0
             accumulated_metrics = {k: 0 for k in accumulated_metrics}
+            start = time.perf_counter()
+
+         # Evaluation logic
+        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
+            stop = time.perf_counter()
+            val_loss, val_ntokens, val_metrics = evaluate_grpo(
+                model=model,
+                dataset=val_dataset,
+                loss_fn=loss_fn,
+                ref_model=ref_model,
+                reward_funcs=reward_funcs,
+                tokenizer=tokenizer,
+                group_size=3,
+                batch_size=args.batch_size,
+                num_batches=args.val_batches,
+                max_seq_length=args.max_seq_length,
+                max_tokens=args.max_completion_length,
+                beta=args.beta,
+                epsilon_low=args.epsilon_low,
+                epsilon_high=args.epsilon_high,
+                temperature=args.temperature,
+                iterate_batches=iterate_batches,
+                enable_overlong_filtering=args.enable_overlong_filtering,
+            )
+            val_time = time.perf_counter() - stop
+            if rank == 0:
+                val_metrics_str = (
+                    f"Val loss {val_loss:.3f}, "
+                    f"Val total_rewards_mean {val_metrics['total_rewards_mean']:.3f}, "
+                    f"Val total_rewards_std {val_metrics['total_rewards_std']:.3f}, "
+                    f"Val grouped_rewards_mean {val_metrics['grouped_rewards_mean']:.3f}, "
+                    f"Val grouped_rewards_std {val_metrics['grouped_rewards_std']:.3f}, "
+                    f"Val Average Generated Tokens {val_metrics['average_generated_tokens']}, "
+                    f"Val kl {val_metrics['kl']:.3f}"
+                )
+
+                for i, reward_func in enumerate(reward_funcs):
+                    val_metrics_str += (
+                        f", Val {reward_func.__name__}_mean {val_metrics[f'{reward_func.__name__}_mean']:.3f}, "
+                        f"Val {reward_func.__name__}_std {val_metrics[f'{reward_func.__name__}_std']:.3f}"
+                    )
+
+                print(
+                    f"Iter {it}: {val_metrics_str}, " f"Val took {val_time:.3f}s",
+                    flush=True,
+                )
+
+            if training_callback is not None:
+                training_callback.on_val_loss_report(
+                    {
+                        "iteration": it,
+                        "val_loss": val_loss,
+                        **{f"val_{k}": v for k, v in val_metrics.items()},
+                        "val_time": val_time,
+                    }
+                )
+
             start = time.perf_counter()
 
         if it % args.steps_per_save == 0:
