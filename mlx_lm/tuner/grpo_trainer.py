@@ -1016,6 +1016,63 @@ def train_grpo(
             train=True,
         ),
     ):
+        # For the first iteration, evaluate before training to get baseline performance
+        if it == 1:
+            stop = time.perf_counter()
+            val_loss, val_ntokens, val_metrics = evaluate_grpo(
+                model=model,
+                dataset=val_dataset,
+                loss_fn=loss_fn,
+                ref_model=ref_model,
+                reward_funcs=reward_funcs,
+                tokenizer=tokenizer,
+                group_size=3,
+                batch_size=args.batch_size,
+                num_batches=args.val_batches,
+                max_seq_length=args.max_seq_length,
+                max_tokens=args.max_completion_length,
+                beta=args.beta,
+                epsilon_low=args.epsilon_low,
+                epsilon_high=args.epsilon_high,
+                temperature=args.temperature,
+                iterate_batches=iterate_batches,
+                enable_overlong_filtering=args.enable_overlong_filtering,
+            )
+            val_time = time.perf_counter() - stop
+            if rank == 0:
+                val_metrics_str = (
+                    f"Val loss {val_loss:.3f}, "
+                    f"Val total_rewards_mean {val_metrics['total_rewards_mean']:.3f}, "
+                    f"Val total_rewards_std {val_metrics['total_rewards_std']:.3f}, "
+                    f"Val grouped_rewards_mean {val_metrics['grouped_rewards_mean']:.3f}, "
+                    f"Val grouped_rewards_std {val_metrics['grouped_rewards_std']:.3f}, "
+                    f"Val Average Generated Tokens {val_metrics['average_generated_tokens']}, "
+                    f"Val kl {val_metrics['kl']:.3f}"
+                )
+
+                for i, reward_func in enumerate(reward_funcs):
+                    val_metrics_str += (
+                        f", Val {reward_func.__name__}_mean {val_metrics[f'{reward_func.__name__}_mean']:.3f}, "
+                        f"Val {reward_func.__name__}_std {val_metrics[f'{reward_func.__name__}_std']:.3f}"
+                    )
+
+                print(
+                    f"Initial validation - Iter {it}: {val_metrics_str}, " f"Val took {val_time:.3f}s",
+                    flush=True,
+                )
+
+            if training_callback is not None:
+                training_callback.on_val_loss_report(
+                    {
+                        "iteration": it,
+                        "val_loss": val_loss,
+                        **{f"val_{k}": v for k, v in val_metrics.items()},
+                        "val_time": val_time,
+                    }
+                )
+
+            start = time.perf_counter()
+
         # Call step() which now internally performs num_iterations updates
         loss, toks, metrics = step(batch, it)
         losses += loss
@@ -1089,8 +1146,9 @@ def train_grpo(
             accumulated_metrics = {k: 0 for k in accumulated_metrics}
             start = time.perf_counter()
 
-         # Evaluation logic
-        if it == 1 or it % args.steps_per_eval == 0 or it >= args.iters:
+        # Run evaluation at regular intervals or at the final iteration
+        # Skip if this is the first iteration (already evaluated above)
+        if (it % args.steps_per_eval == 0 or it >= args.iters) and it != 1:
             stop = time.perf_counter()
             val_loss, val_ntokens, val_metrics = evaluate_grpo(
                 model=model,
