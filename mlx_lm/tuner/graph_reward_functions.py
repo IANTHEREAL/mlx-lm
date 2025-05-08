@@ -228,9 +228,12 @@ def expert_reward_func(
             scores.append(0)
             continue
 
-        total_reference_issue_count = sum(
-            [len(issues) for issues in reference_issues.values()]
-        )
+        total_reference_issue_count = 0
+        for issue_list in reference_issues.values():
+            for issue in issue_list:
+                if float(issue["confidence"]) >= 0.9:
+                    total_reference_issue_count += 1
+
         total_student_issue_count = sum(
             [len(issues) for issues in student_issues.values()]
         )
@@ -287,11 +290,7 @@ def expert_reward_func(
                 + len(moderate_confidence_reference_entity_redundancy_issues) * 0.5
             )
 
-            if len(student_entity_redundancy_issues) > 0 and (
-                len(high_confidence_reference_entity_redundancy_issues) > 0
-                or len(moderate_confidence_reference_entity_redundancy_issues) > 0
-            ):
-
+            if len(student_entity_redundancy_issues) > 0:
                 for student_ids_set in student_entity_redundancy_issues:
                     this_score = 0
                     for (
@@ -375,11 +374,7 @@ def expert_reward_func(
                 * 0.5
             )
 
-            if len(student_relationship_redundancy_issues) > 0 and (
-                len(high_confidence_reference_relationship_redundancy_issues) > 0
-                or len(moderate_confidence_reference_relationship_redundancy_issues) > 0
-            ):
-
+            if len(student_relationship_redundancy_issues) > 0:
                 for student_ids_set in student_relationship_redundancy_issues:
                     this_score = 0
                     for (
@@ -445,10 +440,7 @@ def expert_reward_func(
                 + len(moderate_confidence_reference_entity_quality_issues_ids) * 0.5
             )
 
-            if len(student_entity_quality_issues_ids) > 0 and (
-                len(high_confidence_reference_entity_quality_issues_ids) > 0
-                or len(moderate_confidence_reference_entity_quality_issues_ids) > 0
-            ):
+            if len(student_entity_quality_issues_ids) > 0:
                 for student_id in student_entity_quality_issues_ids:
                     this_score = 0
                     if (
@@ -503,12 +495,7 @@ def expert_reward_func(
                 * 0.5
             )
 
-            if len(student_relationship_quality_issues_ids) > 0 and (
-                len(high_confidence_reference_relationship_quality_issues_ids) > 0
-                or len(moderate_confidence_reference_relationship_quality_issues_ids)
-                > 0
-            ):
-
+            if len(student_relationship_quality_issues_ids) > 0:
                 for student_id in student_relationship_quality_issues_ids:
                     this_score = 0
                     if (
