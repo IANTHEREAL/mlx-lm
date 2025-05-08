@@ -239,13 +239,28 @@ def expert_reward_func(
             scores.append(1)
             continue
         elif total_reference_issue_count == 0 or total_student_issue_count == 0:
+            for issues in student_issues.values():
+                for issue in issues:
+                    print(f"<invalid_issue>{issue}</invalid_issue>")
             scores.append(0)
             continue
 
-        this_score = 0
-        total_count = 0
+        student_score = 0
+        reference_score = 0
 
         try:
+            high_confidence_entity_redundancy_issues = [
+                issue
+                for issue in reference_issues["entity_redundancy_issues"]
+                if float(issue["confidence"]) >= 1.8
+            ]
+            moderate_confidence_entity_redundancy_issues = [
+                issue
+                for issue in reference_issues["entity_redundancy_issues"]
+                if float(issue["confidence"]) >= 0.9
+                and float(issue["confidence"]) < 1.8
+            ]
+
             student_entity_redundancy_issues = normalize_affected_ids(
                 [
                     set(student_issue["affected_ids"])
@@ -253,26 +268,35 @@ def expert_reward_func(
                     if len(student_issue["affected_ids"]) > 0
                 ]
             )
-            reference_entity_redundancy_issues = normalize_affected_ids(
+            high_confidence_reference_entity_redundancy_issues = normalize_affected_ids(
                 [
                     set(reference_issue["affected_ids"])
-                    for reference_issue in reference_issues["entity_redundancy_issues"]
+                    for reference_issue in high_confidence_entity_redundancy_issues
                     if len(reference_issue["affected_ids"]) > 0
                 ]
             )
-
-            total_count += max(
-                len(student_entity_redundancy_issues),
-                len(reference_entity_redundancy_issues),
+            moderate_confidence_reference_entity_redundancy_issues = normalize_affected_ids(
+                [
+                    set(reference_issue["affected_ids"])
+                    for reference_issue in moderate_confidence_entity_redundancy_issues
+                    if len(reference_issue["affected_ids"]) > 0
+                ]
+            )
+            reference_score += (
+                len(high_confidence_reference_entity_redundancy_issues)
+                + len(moderate_confidence_reference_entity_redundancy_issues) * 0.5
             )
 
-            if (
-                len(student_entity_redundancy_issues) > 0
-                and len(reference_entity_redundancy_issues) > 0
+            if len(student_entity_redundancy_issues) > 0 and (
+                len(high_confidence_reference_entity_redundancy_issues) > 0
+                or len(moderate_confidence_reference_entity_redundancy_issues) > 0
             ):
-                redundancy_entity_f1_score = 0
-                for reference_ids_set in reference_entity_redundancy_issues:
-                    for student_ids_set in student_entity_redundancy_issues:
+
+                for student_ids_set in student_entity_redundancy_issues:
+                    this_score = 0
+                    for (
+                        reference_ids_set
+                    ) in high_confidence_reference_entity_redundancy_issues:
                         intersection_result = student_ids_set.intersection(
                             reference_ids_set
                         )
@@ -281,12 +305,45 @@ def expert_reward_func(
                                 student_ids_set, reference_ids_set
                             )
                             this_score += f1_score
+
+                    for (
+                        reference_ids_set
+                    ) in moderate_confidence_reference_entity_redundancy_issues:
+                        intersection_result = student_ids_set.intersection(
+                            reference_ids_set
+                        )
+                        if len(intersection_result) > 0:
+                            f1_score = compute_f1_score(
+                                student_ids_set, reference_ids_set
+                            )
+                            this_score += f1_score * 0.5
+
+                    student_score += this_score
+
+                    if this_score == 0:
+                        student_score -= 0.5
+                        print(
+                            f"<invalid_entity_redundancy_issues>{student_ids_set}</invalid_entity_redundancy_issues>"
+                        )
+
         except Exception as e:
             print(
                 f"Failed to count entity redundancy issues in expert_reward_func response {e}"
             )
 
         try:
+            high_confidence_relationship_redundancy_issues = [
+                issue
+                for issue in reference_issues["relationship_redundancy_issues"]
+                if float(issue["confidence"]) >= 1.8
+            ]
+            moderate_confidence_relationship_redundancy_issues = [
+                issue
+                for issue in reference_issues["relationship_redundancy_issues"]
+                if float(issue["confidence"]) >= 0.9
+                and float(issue["confidence"]) < 1.8
+            ]
+
             student_relationship_redundancy_issues = normalize_affected_ids(
                 [
                     set(student_issue["affected_ids"])
@@ -296,26 +353,38 @@ def expert_reward_func(
                     if len(student_issue["affected_ids"]) > 0
                 ]
             )
-            reference_relationship_redundancy_issues = normalize_affected_ids(
+            high_confidence_reference_relationship_redundancy_issues = normalize_affected_ids(
                 [
                     set(reference_issue["affected_ids"])
-                    for reference_issue in reference_issues[
-                        "relationship_redundancy_issues"
-                    ]
+                    for reference_issue in high_confidence_relationship_redundancy_issues
                     if len(reference_issue["affected_ids"]) > 0
                 ]
             )
-            total_count += max(
-                len(student_relationship_redundancy_issues),
-                len(reference_relationship_redundancy_issues),
+
+            moderate_confidence_reference_relationship_redundancy_issues = normalize_affected_ids(
+                [
+                    set(reference_issue["affected_ids"])
+                    for reference_issue in moderate_confidence_relationship_redundancy_issues
+                    if len(reference_issue["affected_ids"]) > 0
+                ]
             )
 
-            if (
-                len(student_relationship_redundancy_issues) > 0
-                and len(reference_relationship_redundancy_issues) > 0
+            reference_score += (
+                len(high_confidence_reference_relationship_redundancy_issues)
+                + len(moderate_confidence_reference_relationship_redundancy_issues)
+                * 0.5
+            )
+
+            if len(student_relationship_redundancy_issues) > 0 and (
+                len(high_confidence_reference_relationship_redundancy_issues) > 0
+                or len(moderate_confidence_reference_relationship_redundancy_issues) > 0
             ):
-                for reference_ids_set in reference_relationship_redundancy_issues:
-                    for student_ids_set in student_relationship_redundancy_issues:
+
+                for student_ids_set in student_relationship_redundancy_issues:
+                    this_score = 0
+                    for (
+                        reference_ids_set
+                    ) in high_confidence_reference_relationship_redundancy_issues:
                         intersection_result = student_ids_set.intersection(
                             reference_ids_set
                         )
@@ -324,66 +393,83 @@ def expert_reward_func(
                                 student_ids_set, reference_ids_set
                             )
                             this_score += f1_score
+
+                    for (
+                        reference_ids_set
+                    ) in moderate_confidence_reference_relationship_redundancy_issues:
+                        intersection_result = student_ids_set.intersection(
+                            reference_ids_set
+                        )
+                        if len(intersection_result) > 0:
+                            f1_score = compute_f1_score(
+                                student_ids_set, reference_ids_set
+                            )
+                            this_score += f1_score * 0.5
+
+                    student_score += this_score
+
+                    if this_score == 0:
+                        student_score -= 0.5
+                        print(
+                            f"<invalid_relationship_redundancy_issues>{student_ids_set}</invalid_relationship_redundancy_issues>"
+                        )
+
         except Exception as e:
             print(
                 f"Failed to count relationship redundancy issues in expert_reward_func response {e}"
             )
 
         try:
-            student_missing_relationship_issues_ids = set()
-            reference_missing_relationship_issues_ids = set()
-            for student_issue in student_issues["missing_relationship_issues"]:
-                student_missing_relationship_issues_ids.add(
-                    ",".join(str(id) for id in sorted(student_issue["affected_ids"]))
-                )
-            for reference_issue in reference_issues["missing_relationship_issues"]:
-                reference_missing_relationship_issues_ids.add(
-                    ",".join(str(id) for id in sorted(reference_issue["affected_ids"]))
-                )
-
-            total_count += max(
-                len(student_missing_relationship_issues_ids),
-                len(reference_missing_relationship_issues_ids),
-            )
-
-            if (
-                len(student_missing_relationship_issues_ids) > 0
-                and len(reference_missing_relationship_issues_ids) > 0
-            ):
-                missing_relationship_score = 0
-                for reference_issue_id in reference_missing_relationship_issues_ids:
-                    if reference_issue_id in student_missing_relationship_issues_ids:
-                        missing_relationship_score += 1
-                this_score += missing_relationship_score
-        except Exception as e:
-            logger.error(
-                f"Failed to count missing relationship issues in expert_reward_func response {e}"
-            )
-
-        try:
             student_entity_quality_issues_ids = set()
-            reference_entity_quality_issues_ids = set()
+            high_confidence_reference_entity_quality_issues_ids = set()
+            moderate_confidence_reference_entity_quality_issues_ids = set()
+
             for student_issue in student_issues["entity_quality_issues"]:
                 student_entity_quality_issues_ids.update(student_issue["affected_ids"])
-            for reference_issue in reference_issues["entity_quality_issues"]:
-                reference_entity_quality_issues_ids.update(
-                    reference_issue["affected_ids"]
-                )
 
-            total_count += max(
-                len(student_entity_quality_issues_ids),
-                len(reference_entity_quality_issues_ids),
+            for reference_issue in reference_issues["entity_quality_issues"]:
+                if float(reference_issue["confidence"]) >= 1.8:
+                    high_confidence_reference_entity_quality_issues_ids.update(
+                        reference_issue["affected_ids"]
+                    )
+                elif (
+                    float(reference_issue["confidence"]) >= 0.9
+                    and float(reference_issue["confidence"]) < 1.8
+                ):
+                    moderate_confidence_reference_entity_quality_issues_ids.update(
+                        reference_issue["affected_ids"]
+                    )
+
+            reference_score += (
+                len(high_confidence_reference_entity_quality_issues_ids)
+                + len(moderate_confidence_reference_entity_quality_issues_ids) * 0.5
             )
 
-            if (
-                len(student_entity_quality_issues_ids) > 0
-                and len(reference_entity_quality_issues_ids) > 0
+            if len(student_entity_quality_issues_ids) > 0 and (
+                len(high_confidence_reference_entity_quality_issues_ids) > 0
+                or len(moderate_confidence_reference_entity_quality_issues_ids) > 0
             ):
-                entity_quality_score = 0
-                for reference_issue_id in reference_entity_quality_issues_ids:
-                    if reference_issue_id in student_entity_quality_issues_ids:
-                        entity_quality_score += 1
-                this_score += entity_quality_score
+                for student_id in student_entity_quality_issues_ids:
+                    this_score = 0
+                    if (
+                        student_id
+                        in high_confidence_reference_entity_quality_issues_ids
+                    ):
+                        this_score += 1
+                    if (
+                        student_id
+                        in moderate_confidence_reference_entity_quality_issues_ids
+                    ):
+                        this_score += 0.5
+
+                    student_score += this_score
+
+                    if this_score == 0:
+                        student_score -= 0.5
+                        print(
+                            f"<invalid_entity_quality_issues>{student_id}</invalid_entity_quality_issues>"
+                        )
+
         except Exception as e:
             print(
                 f"Failed to count entity quality issues in expert_reward_func response {e}"
@@ -391,40 +477,77 @@ def expert_reward_func(
 
         try:
             student_relationship_quality_issues_ids = set()
-            reference_relationship_quality_issues_ids = set()
+            high_confidence_reference_relationship_quality_issues_ids = set()
+            moderate_confidence_reference_relationship_quality_issues_ids = set()
+
             for student_issue in student_issues["relationship_quality_issues"]:
                 student_relationship_quality_issues_ids.update(
                     student_issue["affected_ids"]
                 )
             for reference_issue in reference_issues["relationship_quality_issues"]:
-                reference_relationship_quality_issues_ids.update(
-                    reference_issue["affected_ids"]
-                )
+                if float(reference_issue["confidence"]) >= 1.8:
+                    high_confidence_reference_relationship_quality_issues_ids.update(
+                        reference_issue["affected_ids"]
+                    )
+                elif (
+                    float(reference_issue["confidence"]) >= 0.9
+                    and float(reference_issue["confidence"]) < 1.8
+                ):
+                    moderate_confidence_reference_relationship_quality_issues_ids.update(
+                        reference_issue["affected_ids"]
+                    )
 
-            total_count += max(
-                len(student_relationship_quality_issues_ids),
-                len(reference_relationship_quality_issues_ids),
+            reference_score += (
+                len(high_confidence_reference_relationship_quality_issues_ids)
+                + len(moderate_confidence_reference_relationship_quality_issues_ids)
+                * 0.5
             )
 
-            if (
-                len(student_relationship_quality_issues_ids) > 0
-                and len(reference_relationship_quality_issues_ids) > 0
+            if len(student_relationship_quality_issues_ids) > 0 and (
+                len(high_confidence_reference_relationship_quality_issues_ids) > 0
+                or len(moderate_confidence_reference_relationship_quality_issues_ids)
+                > 0
             ):
-                relationship_quality_score = 0
-                for reference_issue_id in reference_relationship_quality_issues_ids:
-                    if reference_issue_id in student_relationship_quality_issues_ids:
-                        relationship_quality_score += 1
-                this_score += relationship_quality_score
+
+                for student_id in student_relationship_quality_issues_ids:
+                    this_score = 0
+                    if (
+                        student_id
+                        in high_confidence_reference_relationship_quality_issues_ids
+                    ):
+                        this_score += 1
+                    if (
+                        student_id
+                        in moderate_confidence_reference_relationship_quality_issues_ids
+                    ):
+                        this_score += 0.5
+
+                    student_score += this_score
+                    if this_score == 0:
+                        student_score -= 0.5
+                        print(
+                            f"<invalid_relationship_quality_issues>{student_id}</invalid_relationship_quality_issues>"
+                        )
+
         except Exception as e:
             print(
                 f"Failed to count relationship quality issues in expert_reward_func response {e}"
             )
 
-        scores.append(
-            round(
-                this_score / total_count,
-                2,
+        if reference_score == 0:
+            if student_score == 0:
+                scores.append(1)
+            else:
+                scores.append(0)
+        else:
+            scores.append(
+                min(
+                    round(
+                        student_score / reference_score,
+                        2,
+                    ),
+                    1,
+                )
             )
-        )
 
     return scores
