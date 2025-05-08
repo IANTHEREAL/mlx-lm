@@ -573,12 +573,34 @@ def grpo_loss(
     )
     is_region_clipped = is_low_clipped | is_high_clipped
 
+    # Create a mask to filter out samples with extreme policy ratios
+    # Define what constitutes "extreme" - adjust thresholds as needed
+    extreme_threshold = 100.0  # Consider values above 100.0 as extreme
+    small_threshold = 0.01  # Consider values below 0.01 as extreme
+    extreme_mask = (
+        (policy_ratio < extreme_threshold)
+        & (policy_ratio > small_threshold)
+        & ~mx.isnan(policy_ratio)
+    )
+
     # Calculate both unclipped and clipped objectives
     unclipped_obj = policy_ratio * advantages.reshape(-1, 1)
     clipped_obj = policy_ratio_cliped * advantages.reshape(-1, 1)
 
     # Take the minimum (pessimistic bound)
     per_token_loss = -mx.minimum(unclipped_obj, clipped_obj)
+
+    # Apply the extreme mask - zero out the contribution of extreme samples
+    # This effectively removes their influence on the gradient
+    per_token_loss = per_token_loss * extreme_mask.astype(mx.float32)
+
+    # Count and log extreme tokens
+    extreme_token_count = mx.sum((~extreme_mask & length_mask).astype(mx.int32))
+    if extreme_token_count > 0:
+        print(
+            f"WARNING: Detected and masked {extreme_token_count} tokens with extreme policy ratios",
+            flush=True,
+        )
 
     # Add KL penalty if beta is non-zero
     if beta != 0.0:
@@ -1057,7 +1079,8 @@ def train_grpo(
                     )
 
                 print(
-                    f"Initial validation - Iter {it}: {val_metrics_str}, " f"Val took {val_time:.3f}s",
+                    f"Initial validation - Iter {it}: {val_metrics_str}, "
+                    f"Val took {val_time:.3f}s",
                     flush=True,
                 )
 
