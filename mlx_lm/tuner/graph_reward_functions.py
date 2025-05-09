@@ -244,7 +244,7 @@ def expert_reward_func(
         elif total_reference_issue_count == 0 or total_student_issue_count == 0:
             for issues in student_issues.values():
                 for issue in issues:
-                    print(f"<invalid_issue>{issue}</invalid_issue>")
+                    print(f"<invalid_issue>{json.dumps(issue)}</invalid_issue>")
             scores.append(0)
             continue
 
@@ -321,8 +321,17 @@ def expert_reward_func(
 
                     if this_score == 0:
                         student_score -= 0.5
+                        # Find all issues that have overlap with this normalized ID set
+                        # since student_ids_set could be a result of merging multiple original issues
+                        invalid_issues = []
+                        for issue in student_issues["entity_redundancy_issues"]:
+                            if not set(issue["affected_ids"]).isdisjoint(
+                                student_ids_set
+                            ):
+                                invalid_issues.append(issue)
+
                         print(
-                            f"<invalid_entity_redundancy_issues>{student_ids_set}</invalid_entity_redundancy_issues>"
+                            f"<invalid_issue>{json.dumps(invalid_issues if invalid_issues else list(student_ids_set))}</invalid_issue>"
                         )
 
         except Exception as e:
@@ -405,8 +414,17 @@ def expert_reward_func(
 
                     if this_score == 0:
                         student_score -= 0.5
+                        # Find all issues that have overlap with this normalized ID set
+                        # since student_ids_set could be a result of merging multiple original issues
+                        invalid_issues = []
+                        for issue in student_issues["relationship_redundancy_issues"]:
+                            if not set(issue["affected_ids"]).isdisjoint(
+                                student_ids_set
+                            ):
+                                invalid_issues.append(issue)
+
                         print(
-                            f"<invalid_relationship_redundancy_issues>{student_ids_set}</invalid_relationship_redundancy_issues>"
+                            f"<invalid_issue>{json.dumps(invalid_issues if invalid_issues else list(student_ids_set))}</invalid_issue>"
                         )
 
         except Exception as e:
@@ -458,8 +476,14 @@ def expert_reward_func(
 
                     if this_score == 0:
                         student_score -= 0.5
+                        # Find the issue that contains this ID
+                        invalid_issues = []
+                        for issue in student_issues["entity_quality_issues"]:
+                            if student_id in issue["affected_ids"]:
+                                invalid_issues.append(issue)
+
                         print(
-                            f"<invalid_entity_quality_issues>{student_id}</invalid_entity_quality_issues>"
+                            f"<invalid_issue>{json.dumps(invalid_issues if invalid_issues else student_id)}</invalid_issue>"
                         )
 
         except Exception as e:
@@ -512,8 +536,14 @@ def expert_reward_func(
                     student_score += this_score
                     if this_score == 0:
                         student_score -= 0.5
+                        # Find the issue that contains this ID
+                        invalid_issues = []
+                        for issue in student_issues["relationship_quality_issues"]:
+                            if student_id in issue["affected_ids"]:
+                                invalid_issues.append(issue)
+
                         print(
-                            f"<invalid_relationship_quality_issues>{student_id}</invalid_relationship_quality_issues>"
+                            f"<invalid_issue>{json.dumps(invalid_issues if invalid_issues else student_id)}</invalid_issue>"
                         )
 
         except Exception as e:
