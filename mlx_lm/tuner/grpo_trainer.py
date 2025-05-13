@@ -36,13 +36,13 @@ class GRPOTrainingArgs(TrainingArgs):
         metadata={"help": "Number of responses per prompt."},
     )
     beta: float = field(default=0.1, metadata={"help": "KL penalty coefficient."})
-    epsilon_low: float = field(
+    epsilon: float = field(
         default=1e-4,
         metadata={"help": "The lower bound Epsilon for numerical stability."},
     )
     epsilon_high: float = field(
-        default=2e-4,
-        metadata={"help": "The upper bound Epsilon for numerical stability."},
+        default=None,
+        metadata={"help": "Upper-bound epsilon value for clipping. If not specified, it defaults to the same value as the lower-bound specified in argument epsilon."}
     )
     max_completion_length: int = field(
         default=512, metadata={"help": "Number of Generations."}
@@ -285,8 +285,8 @@ def grpo_loss(
     reward_funcs: Optional[List[RewardFunctions]] = None,
     beta: float = 0.1,
     group_size: int = 4,
-    epsilon_low: float = 1e-4,
-    epsilon_high: float = 2e-4,
+    epsilon: float = 1e-4,
+    epsilon_high: float = None,
     max_tokens: int = 64,
     temperature: float = 0.8,
     reward_weights: Optional[List[float]] = None,
@@ -481,7 +481,7 @@ def grpo_loss(
             ]
             for j, idx in enumerate(indices):
                 advantages[idx] = (prompt_rewards[j] - mean_reward) / (
-                    std_reward + 1e-6
+                    std_reward + 1e-4
                 )
                 print(f"compute advantages({idx}) = {advantages[idx]}")
         else:
@@ -561,13 +561,12 @@ def grpo_loss(
     policy_ratio = mx.exp(mx.array(token_log_probs - old_log_probs))
     print(f"compute policy_ratio = {mx.mean(policy_ratio)}", flush=True)
 
-    # Apply asymmetric PPO clipping instead of symmetric clipping
-    # This handles positive and negative advantages differently
-    # and is more effective in practice
-    policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon_low, 1 + epsilon_high)
+    # Apply PPO like clipping
+    epsilon_high = epsilon_high if epsilon_high else epsilon
+    policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon, 1 + epsilon_high)
 
     # Track clipping metrics
-    is_low_clipped = (policy_ratio < 1 - epsilon_low) & (advantages.reshape(-1, 1) < 0)
+    is_low_clipped = (policy_ratio < 1 - epsilon) & (advantages.reshape(-1, 1) < 0)
     is_high_clipped = (policy_ratio > 1 + epsilon_high) & (
         advantages.reshape(-1, 1) > 0
     )
@@ -785,7 +784,7 @@ def evaluate_grpo(
     batch_size,
     num_batches,
     beta: float,
-    epsilon_low: float,
+    epsilon: float,
     epsilon_high: float,
     group_size: int,
     max_seq_length: int,
@@ -819,7 +818,7 @@ def evaluate_grpo(
             reward_funcs=reward_funcs,
             beta=beta,
             group_size=group_size,
-            epsilon_low=epsilon_low,
+            epsilon=epsilon,
             epsilon_high=epsilon_high,
             ref_model=ref_model,
             temperature=temperature,
@@ -1054,7 +1053,7 @@ def train_grpo(
                 max_seq_length=args.max_seq_length,
                 max_tokens=args.max_completion_length,
                 beta=args.beta,
-                epsilon_low=args.epsilon_low,
+                epsilon=args.epsilon,
                 epsilon_high=args.epsilon_high,
                 temperature=args.temperature,
                 iterate_batches=iterate_batches,

@@ -1,5 +1,3 @@
-# Copyright © 2024 Apple Inc.
-
 import argparse
 import math
 import os
@@ -14,8 +12,9 @@ import numpy as np
 import yaml
 
 from .tokenizer_utils import TokenizerWrapper
-from .tuner.datasets import load_dataset
 from .tuner.grpo_trainer import GRPOTrainingArgs, evaluate_grpo, train_grpo
+from .tuner.callbacks import WandBCallback
+from .tuner.datasets import CacheDataset, load_dataset
 from .tuner.trainer import TrainingArgs, TrainingCallback, evaluate, train
 from .tuner.utils import (
     build_schedule,
@@ -71,12 +70,14 @@ CONFIG_DEFAULTS = {
     "lr_schedule": None,
     "lora_parameters": {"rank": 8, "dropout": 0.0, "scale": 10.0},
     "mask_prompt": False,
+    "wandb": None,
+
     # GRPO args
     "reference_model_path": None,
     "group_size": 4,
     "beta": 0.1,
     "epsilon": 1e-4,
-    "epsilon_high": 2e-4,
+    "epsilon_high": None,
     "max_completion_length": 512,
     "use_chat_template": False,
     "use_prompt": False,
@@ -201,6 +202,12 @@ def build_parser():
         help="Use gradient checkpointing to reduce memory use.",
         default=None,
     )
+    parser.add_argument(
+        "--wandb",
+        type=str,
+        default=None,
+        help="WandB project name to report training metrics. Disabled if None.",
+    )
     parser.add_argument("--seed", type=int, help="The PRNG seed")
 
     # GRPO args
@@ -231,8 +238,8 @@ def build_parser():
     parser.add_argument(
         "--epsilon-high",
         type=float,
-        help="The upper bound Epsilon for numerical stability.",
-        default=2e-4,
+        help="Upper-bound epsilon value for clipping. If not specified, it defaults to the same value as the lower-bound specified in argument epsilon.",
+        default=None,
     )
     parser.add_argument(
         "--use-chat-template",
@@ -276,7 +283,7 @@ def build_parser():
 def train_model(
     args,
     model: nn.Module,
-    tokenizer: TokenizerWrapper,
+    tokenizer,
     train_set,
     valid_set,
     training_callback: TrainingCallback = None,
@@ -347,7 +354,7 @@ def train_model(
             grad_checkpoint=args.grad_checkpoint,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon_low=args.epsilon,
+            epsilon=args.epsilon,
             epsilon_high=args.epsilon_high,
             reference_model_path=args.reference_model_path,
             temperature=args.temperature,
@@ -370,8 +377,8 @@ def train_model(
         train_grpo(
             model=model,
             ref_model=reference_model.freeze() if reference_model else None,
-            tokenizer=tokenizer,
             optimizer=opt,
+            tokenizer=tokenizer,
             train_dataset=train_set,
             val_dataset=valid_set,
             args=training_args,
@@ -389,10 +396,8 @@ def train_model(
             max_seq_length=args.max_seq_length,
             grad_checkpoint=args.grad_checkpoint,
         )
-        # Train model
         train(
             model=model,
-            tokenizer=tokenizer,
             args=training_args,
             optimizer=opt,
             train_dataset=train_set,
@@ -420,7 +425,7 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
             max_seq_length=args.max_seq_length,
             beta=args.beta,
             group_size=args.group_size,
-            epsilon_low=args.epsilon,
+            epsilon=args.epsilon,
             epsilon_high=args.epsilon_high,
             temperature=args.temperature,
             max_tokens=args.max_seq_length,
@@ -450,6 +455,14 @@ def evaluate_model(args, model: nn.Module, tokenizer: TokenizerWrapper, test_set
 
 def run(args, training_callback: TrainingCallback = None):
     np.random.seed(args.seed)
+
+    if args.wandb is not None:
+        training_callback = WandBCallback(
+            project_name=args.wandb,
+            log_dir=args.adapter_path,
+            config=vars(args),
+            wrapped_callback=training_callback,
+        )
 
     print("Loading pretrained model")
     model, tokenizer = load(args.model)
