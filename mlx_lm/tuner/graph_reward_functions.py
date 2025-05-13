@@ -61,7 +61,6 @@ def normalize_affected_ids(redundancy_sets):
 
     return merged_sets
 
-
 def extract_issues(response: str):
     response_json_str = extract_json(response)
     if not response_json_str:
@@ -217,12 +216,24 @@ def expert_reward_func(
     prompts: list, completions: list, answer: list, types: Optional[list] = None
 ) -> list[float]:
     responses = [completion for completion in completions]
+    sample_index = types[0]["index"]
+    sample_id = types[0]["id"]
     scores = []
 
     for i, response in enumerate(responses):
         try:
             student_issues = extract_issues(response)
+            for issue_list in student_issues.values():
+                for issue in issue_list:
+                    issue["sample_id"] = sample_id
+                    issue["sample_index"] = sample_index
+
             reference_issues = extract_issues(answer[i])
+            for issue_list in reference_issues.values():
+                for issue in issue_list:
+                    issue["sample_id"] = sample_id
+                    issue["sample_index"] = sample_index
+
         except Exception as e:
             print(f"Failed to parse expert_reward_func response {e}, {response}")
             scores.append(0)

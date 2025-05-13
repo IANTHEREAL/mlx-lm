@@ -42,7 +42,9 @@ class GRPOTrainingArgs(TrainingArgs):
     )
     epsilon_high: float = field(
         default=None,
-        metadata={"help": "Upper-bound epsilon value for clipping. If not specified, it defaults to the same value as the lower-bound specified in argument epsilon."}
+        metadata={
+            "help": "Upper-bound epsilon value for clipping. If not specified, it defaults to the same value as the lower-bound specified in argument epsilon."
+        },
     )
     max_completion_length: int = field(
         default=512, metadata={"help": "Number of Generations."}
@@ -561,7 +563,24 @@ def grpo_loss(
     policy_ratio = mx.exp(mx.array(token_log_probs - old_log_probs))
     print(f"compute policy_ratio = {mx.mean(policy_ratio)}", flush=True)
 
-    # Apply PPO like clipping
+    # Create masks based on the raw policy ratio and advantage direction
+    # Filter out extreme values specifically when they would cause harmful updates
+    extreme_threshold = 100.0  # Consider values above 100.0 as extreme
+    small_threshold = 0.01  # Consider values below 0.01 as extreme
+
+    # Identify potentially harmful cases: large ratios with negative advantages
+    # or small ratios with positive advantages
+    harmful_large_ratio = (policy_ratio > extreme_threshold) & (
+        advantages.reshape(-1, 1) < 0
+    )
+    harmful_small_ratio = (policy_ratio < small_threshold) & (
+        advantages.reshape(-1, 1) > 0
+    )
+
+    # Also filter out NaN values
+    extreme_mask = ~(harmful_large_ratio | harmful_small_ratio | mx.isnan(policy_ratio))
+
+    # Apply PPO clipping
     epsilon_high = epsilon_high if epsilon_high else epsilon
     policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon, 1 + epsilon_high)
 
@@ -571,16 +590,6 @@ def grpo_loss(
         advantages.reshape(-1, 1) > 0
     )
     is_region_clipped = is_low_clipped | is_high_clipped
-
-    # Create a mask to filter out samples with extreme policy ratios
-    # Define what constitutes "extreme" - adjust thresholds as needed
-    extreme_threshold = 100.0  # Consider values above 100.0 as extreme
-    small_threshold = 0.01  # Consider values below 0.01 as extreme
-    extreme_mask = (
-        (policy_ratio < extreme_threshold)
-        & (policy_ratio > small_threshold)
-        & ~mx.isnan(policy_ratio)
-    )
 
     # Calculate both unclipped and clipped objectives
     unclipped_obj = policy_ratio * advantages.reshape(-1, 1)
@@ -872,7 +881,7 @@ def train_grpo(
         f"Starting GRPO training with {len(reward_funcs)} reward functions..., "
         f"iters: {args.iters}, num_iterations: {args.num_iterations}, "
         f"beta: {args.beta}, group_size: {args.group_size}, "
-        f"epsilon: {args.epsilon_low}, epsilon_high: {args.epsilon_high}, "
+        f"epsilon: {args.epsilon}, epsilon_high: {args.epsilon_high}, "
         f"temperature: {args.temperature}, max_tokens: {args.max_completion_length}, "
         f"overlong_filtering: {args.enable_overlong_filtering}"
     )
@@ -959,7 +968,7 @@ def train_grpo(
                 reward_funcs=reward_funcs,
                 beta=args.beta,
                 group_size=args.group_size,
-                epsilon_low=args.epsilon_low,
+                epsilon=args.epsilon,
                 epsilon_high=args.epsilon_high,
                 ref_model=ref_model,
                 old_log_probs=old_log_probs,
@@ -1185,7 +1194,7 @@ def train_grpo(
                 max_seq_length=args.max_seq_length,
                 max_tokens=args.max_completion_length,
                 beta=args.beta,
-                epsilon_low=args.epsilon_low,
+                epsilon=args.epsilon,
                 epsilon_high=args.epsilon_high,
                 temperature=args.temperature,
                 iterate_batches=iterate_batches,
