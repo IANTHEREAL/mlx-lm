@@ -218,6 +218,7 @@ def expert_reward_func(
     responses = [completion for completion in completions]
     sample_index = types[0]["index"]
     sample_id = types[0]["id"]
+    print(f"call expert_reward_func with sample_index = {sample_index}, sample_id = {sample_id}", flush=True)
     scores = []
 
     for i, response in enumerate(responses):

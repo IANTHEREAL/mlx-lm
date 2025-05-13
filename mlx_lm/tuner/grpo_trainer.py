@@ -110,6 +110,7 @@ def generate_grpo(
     end_token: str = "</answer>",
     prompts_text: List[str] = [],
     answers_text: List[str] = [],
+    type_info: List[str] = [],
     util_valid_score: bool = False,
 ):
     try:
@@ -180,6 +181,7 @@ def generate_grpo(
                     and prompt_group_texts
                     and prompt_batch_idx < len(prompts_text)
                     and prompt_batch_idx < len(answers_text)
+                    and prompt_batch_idx < len(type_info)
                 ):
                     try:
                         # Check initial group of completions
@@ -188,6 +190,8 @@ def generate_grpo(
                             * len(prompt_group_texts),
                             completions=prompt_group_texts,
                             answer=[answers_text[prompt_batch_idx]]
+                            * len(prompt_group_texts),
+                            types=[type_info[prompt_batch_idx]]
                             * len(prompt_group_texts),
                         )
 
@@ -244,6 +248,7 @@ def generate_grpo(
                                     prompts=[prompts_text[prompt_batch_idx]],
                                     completions=[new_completion_text],
                                     answer=[answers_text[prompt_batch_idx]],
+                                    types=[type_info[prompt_batch_idx]],
                                 )
 
                                 if single_score and single_score[0] > 0:
@@ -565,7 +570,7 @@ def grpo_loss(
 
     # Create masks based on the raw policy ratio and advantage direction
     # Filter out extreme values specifically when they would cause harmful updates
-    extreme_threshold = 100.0  # Consider values above 100.0 as extreme
+    extreme_threshold = 10.0  # Consider values above 10.0 as extreme
     small_threshold = 0.01  # Consider values below 0.01 as extreme
 
     # Identify potentially harmful cases: large ratios with negative advantages
@@ -573,9 +578,11 @@ def grpo_loss(
     harmful_large_ratio = (policy_ratio > extreme_threshold) & (
         advantages.reshape(-1, 1) < 0
     )
+    print(f"compute harmful_large_ratio = {mx.mean(harmful_large_ratio)}", flush=True)
     harmful_small_ratio = (policy_ratio < small_threshold) & (
         advantages.reshape(-1, 1) > 0
     )
+    print(f"compute harmful_small_ratio = {mx.mean(harmful_small_ratio)}", flush=True)
 
     # Also filter out NaN values
     extreme_mask = ~(harmful_large_ratio | harmful_small_ratio | mx.isnan(policy_ratio))
@@ -586,9 +593,11 @@ def grpo_loss(
 
     # Track clipping metrics
     is_low_clipped = (policy_ratio < 1 - epsilon) & (advantages.reshape(-1, 1) < 0)
+    print(f"compute is_low_clipped = {mx.mean(is_low_clipped)}", flush=True)
     is_high_clipped = (policy_ratio > 1 + epsilon_high) & (
         advantages.reshape(-1, 1) > 0
     )
+    print(f"compute is_high_clipped = {mx.mean(is_high_clipped)}", flush=True)
     is_region_clipped = is_low_clipped | is_high_clipped
 
     # Calculate both unclipped and clipped objectives
@@ -627,6 +636,7 @@ def grpo_loss(
             prompts=expanded_prompts,
             completions=all_completion_texts,
             answer=expanded_answers,
+            types=expanded_types,
         )
         valid_mask = ~mx.isnan(
             mx.array(
@@ -918,6 +928,7 @@ def train_grpo(
             batch_size=args.batch_size,
             prompts_text=prompt_lens,
             answers_text=target_lens,
+            type_info=type_info,
             util_valid_score=True,
         )
 
