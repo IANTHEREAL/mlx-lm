@@ -582,7 +582,7 @@ def grpo_loss(
 
     # Apply PPO clipping
     epsilon_high = epsilon_high if epsilon_high else epsilon
-    policy_ratio_cliped = mx.clip(policy_ratio, 1 - epsilon, 1 + epsilon_high)
+    policy_ratio_clipped = mx.clip(policy_ratio, 1 - epsilon, 1 + epsilon_high)
 
     # Track clipping metrics
     is_low_clipped = (policy_ratio < 1 - epsilon) & (advantages.reshape(-1, 1) < 0)
@@ -593,7 +593,7 @@ def grpo_loss(
 
     # Calculate both unclipped and clipped objectives
     unclipped_obj = policy_ratio * advantages.reshape(-1, 1)
-    clipped_obj = policy_ratio_cliped * advantages.reshape(-1, 1)
+    clipped_obj = policy_ratio_clipped * advantages.reshape(-1, 1)
 
     # Take the minimum (pessimistic bound)
     per_token_loss = -mx.minimum(unclipped_obj, clipped_obj)
